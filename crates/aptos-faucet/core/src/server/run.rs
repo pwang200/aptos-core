@@ -271,7 +271,7 @@ impl RunConfig {
                     None,    // gas_unit_price_override
                     500_000, // max_gas_amount
                     30,      // transaction_expiration_secs
-                    false,   // wait_for_transactions
+                    true,    // wait_for_transactions
                 ),
                 mint_account_address: Some(aptos_test_root_address()),
                 do_not_delegate,

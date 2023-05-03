@@ -26,8 +26,8 @@ static NODE_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:41599"
 static FAUCET_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:8081").unwrap());
 
 const ROUNDS: u64 = 2;
-const FANOUT: u64 = 10;
-const PERSPAWN: u64 = 10;
+const FANOUT: u64 = 20;
+const PERSPAWN: u64 = 50;
 const MASTER_SEED: u64 = 0;
 // const ROUNDS: u64 = 200;
 // const FANOUT: u64 = 10;
@@ -55,63 +55,63 @@ async fn fanout(seed: u64, check: bool) {
         .fund(alice.address(), 5_000_000_000)
         .await
         .context("Failed to fund Alice's account");
-    let ten_seconds = time::Duration::from_secs(10);
-    thread::sleep(ten_seconds);
-    println!("account {:?}", alice.address());
-    match rest_client.get_account(alice.address()).await {
-        Ok(r) => {
-            println!("account info {:?}", r.inner());
-        },
-        Err(e) => {
-            println!("account error {:?}", e);
-        },
+
+    thread::sleep(time::Duration::from_secs(1));
+    // println!("account {:?}", alice.address());
+    // match rest_client.get_account(alice.address()).await {
+    //     Ok(r) => {
+    //         println!("account info {:?}", r.inner());
+    //     },
+    //     Err(e) => {
+    //         println!("account error {:?}", e);
+    //     },
+    // }
+    let a_info = rest_client.get_account(alice.address()).await.unwrap();
+    *alice.sequence_number_mut() = a_info.inner().sequence_number;
+
+    let mut txns: Vec<aptos_types::transaction::SignedTransaction> = Vec::new();
+    for i in 1..PERSPAWN {
+        let bob = LocalAccount::generate(&mut rng);
+        txns.push(coin_client.create_and_pay(&mut alice, bob.address(), 100_000_000, 4, None));
+        accounts.push(bob.address());
     }
-    // let a_info = rest_client.get_account(alice.address()).await.unwrap();
-    // *alice.sequence_number_mut() = a_info.inner().sequence_number;
 
-    // let mut txns: Vec<aptos_types::transaction::SignedTransaction> = Vec::new();
-    // for i in 1..PERSPAWN {
-    //     let bob = LocalAccount::generate(&mut rng);
-    //     txns.push(coin_client.create_and_pay(&mut alice, bob.address(), 100_000_000, 4, None));
-    //     accounts.push(bob.address());
-    // }
+    let mut results: Vec<_> = Vec::new();
+    for tx in &mut txns {
+        results.push(rest_client.submit(tx));
+    }
+    let mut results = join_all(results).await;
+    for r in results {
+        let tx = r.unwrap().into_inner();
+        let tx = rest_client
+            .wait_for_transaction(&tx)
+            .await
+            .context("Failed when waiting for transaction");
+        //println!("tx {:?}", tx.unwrap().inner().transaction_info());
+    }
+    println!("tx done, seed {}", seed);
 
-    // let mut results: Vec<_> = Vec::new();
-    // for tx in &mut txns {
-    //     results.push(rest_client.submit(tx));
-    // }
-    // let mut results = join_all(results).await;
-    // for r in results {
-    //     let tx = r.unwrap().into_inner();
-    //     let tx = rest_client
-    //         .wait_for_transaction(&tx)
-    //         .await
-    //         .context("Failed when waiting for transaction");
-    //     //println!("tx {:?}", tx.unwrap().inner().transaction_info());
-    // }
-    // println!("tx done, seed {}", seed);
+    if check {
+        for a in accounts {
+            coin_client.get_account_balance(&a).await.unwrap();
 
-    // if check {
-    //     for a in accounts {
-    //         coin_client.get_account_balance(&a).await.unwrap();
-
-    //         // println!(
-    //         //     "{} {:?}",
-    //         //     a.to_hex_literal(),
-    //         //     coin_client
-    //         //         .get_account_balance(&a)
-    //         //         .await
-    //         //         .context("Failed to get account balance")
-    //         // );
-    //         // let ac = rest_client
-    //         //     .get_account(a)
-    //         //     .await
-    //         //     .context("Failed to get account")
-    //         //     .unwrap();
-    //         // let acc = ac.inner();
-    //         // println!("{} {:?}", a.to_hex_literal(), acc); //.sequence_number
-    //     }
-    // }
+            // println!(
+            //     "{} {:?}",
+            //     a.to_hex_literal(),
+            //     coin_client
+            //         .get_account_balance(&a)
+            //         .await
+            //         .context("Failed to get account balance")
+            // );
+            // let ac = rest_client
+            //     .get_account(a)
+            //     .await
+            //     .context("Failed to get account")
+            //     .unwrap();
+            // let acc = ac.inner();
+            // println!("{} {:?}", a.to_hex_literal(), acc); //.sequence_number
+        }
+    }
 }
 
 /**
