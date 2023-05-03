@@ -8,7 +8,7 @@ use crate::{
         language_storage::{ModuleId, TypeTag},
     },
     rest_client::{Client as ApiClient, PendingTransaction},
-    transaction_builder::TransactionBuilder,
+    transaction_builder::{TransactionBuilder, TransactionFactory},
     types::{
         account_address::AccountAddress,
         chain_id::ChainId,
@@ -49,6 +49,9 @@ impl<'a> CoinClient<'a> {
             .context("Failed to get chain ID")?
             .inner()
             .chain_id;
+
+        println!("chain-id {}", chain_id);
+
         let transaction_builder = TransactionBuilder::new(
             TransactionPayload::EntryFunction(EntryFunction::new(
                 ModuleId::new(AccountAddress::ONE, Identifier::new("coin").unwrap()),
@@ -80,6 +83,61 @@ impl<'a> CoinClient<'a> {
         // <:!:section_1
     }
 
+    pub fn create_and_pay(
+        &self,
+        from_account: &mut LocalAccount,
+        to_account: AccountAddress,
+        amount: u64,
+        chain_id: u8,
+        options: Option<TransferOptions<'_>>,
+    ) -> aptos_types::transaction::SignedTransaction {
+        let options = options.unwrap_or_default();
+
+        let tx_factory = TransactionFactory::new(ChainId::new(chain_id))
+            .with_max_gas_amount(options.max_gas_amount)
+            .with_gas_unit_price(options.gas_unit_price)
+            .with_transaction_expiration_time(options.timeout_secs);
+        let tx_builder = tx_factory
+            .account_transfer(to_account, amount)
+            .sender(from_account.address())
+            .sequence_number(from_account.sequence_number());
+        from_account.sign_with_transaction_builder(tx_builder)
+    }
+
+    pub fn build(
+        &self,
+        from_account: &mut LocalAccount,
+        to_account: AccountAddress,
+        amount: u64,
+        chain_id: u8,
+        options: Option<TransferOptions<'_>>,
+    ) -> aptos_types::transaction::SignedTransaction {
+        let options = options.unwrap_or_default();
+
+        let transaction_builder = TransactionBuilder::new(
+            TransactionPayload::EntryFunction(EntryFunction::new(
+                ModuleId::new(AccountAddress::ONE, Identifier::new("coin").unwrap()),
+                Identifier::new("transfer").unwrap(),
+                vec![TypeTag::from_str(options.coin_type).unwrap()],
+                vec![
+                    bcs::to_bytes(&to_account).unwrap(),
+                    bcs::to_bytes(&amount).unwrap(),
+                ],
+            )),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + options.timeout_secs,
+            ChainId::new(chain_id),
+        )
+        .sender(from_account.address())
+        .sequence_number(from_account.sequence_number())
+        .max_gas_amount(options.max_gas_amount)
+        .gas_unit_price(options.gas_unit_price);
+        from_account.sign_with_transaction_builder(transaction_builder)
+    }
+
     pub async fn get_account_balance(&self, account: &AccountAddress) -> Result<u64> {
         let response = self
             .api_client
@@ -108,7 +166,7 @@ impl<'a> Default for TransferOptions<'a> {
         Self {
             max_gas_amount: 5_000,
             gas_unit_price: 100,
-            timeout_secs: 10,
+            timeout_secs: 30000,
             coin_type: "0x1::aptos_coin::AptosCoin",
         }
     }
