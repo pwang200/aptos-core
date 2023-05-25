@@ -75,7 +75,7 @@ pub fn build_seed_for_network(seed_config: &NetworkConfig, seed_role: PeerRole) 
     //     .listen_address
     //     .clone()
     //     .append_prod_protos(seed_pubkey, HANDSHAKE_VERSION);
-    let seed_addr = NetworkAddress::from_str("/ip4/192.168.1.77/tcp/6180").unwrap()
+    let seed_addr = NetworkAddress::from_str("/ip4/10.64.113.116/tcp/6180").unwrap()
         .append_prod_protos(seed_pubkey, HANDSHAKE_VERSION);
     let mut keys = HashSet::new();
     keys.insert(seed_pubkey);
@@ -86,3 +86,4 @@ pub fn build_seed_for_network(seed_config: &NetworkConfig, seed_role: PeerRole) 
     );
     seeds
 }
+//192.168.1.77

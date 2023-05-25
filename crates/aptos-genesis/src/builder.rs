@@ -499,10 +499,15 @@ impl Builder {
         // set the first validator as every validators' initial configured seed peer.
         let seed_config = &validators[0].config.validator_network.as_ref().unwrap();
         let seeds = build_seed_for_network(seed_config, PeerRole::Validator);
-        for v in &mut validators {
+        for i in 1..validators.len(){
+            let v = &mut validators[i];
             let network = v.config.validator_network.as_mut().unwrap();
             network.seeds = seeds.clone();
         }
+        // for v in &mut validators {
+        //     let network = v.config.validator_network.as_mut().unwrap();
+        //     network.seeds = seeds.clone();
+        // }
 
         // Build genesis
         let (genesis, waypoint) = self.genesis_ceremony(&mut validators, root_key.public_key())?;
@@ -584,9 +589,9 @@ impl Builder {
         storage.set_data_dir(validator.dir.clone());
         config.consensus.safety_rules.backend = SecureBackend::OnDiskStorage(storage);
 
-        if index > 0 || self.randomize_first_validator_ports {
-            config.randomize_ports();
-        }
+        // if index > 0 || self.randomize_first_validator_ports {
+        //     config.randomize_ports();
+        // }
 
         Ok(validator)
     }

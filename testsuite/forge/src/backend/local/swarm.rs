@@ -116,7 +116,7 @@ impl LocalSwarm {
         R: ::rand::RngCore + ::rand::CryptoRng,
     {
         info!("Building a new swarm");
-        let mut hack_dir = PathBuf::from("/home/pwang/aptos/hack/");
+        let hack_dir = PathBuf::from("/home/pwang/aptos/hack/");
         if hack_dir.exists() {
             fs::remove_dir_all(&hack_dir)?;
         }

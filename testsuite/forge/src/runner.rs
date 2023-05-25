@@ -347,7 +347,9 @@ impl<'cfg, F: Factory> Forge<'cfg, F> {
             // The genesis version should always match the initial node version
             let genesis_version = initial_version.clone();
             let runtime = Runtime::new().unwrap();
-            let mut rng = ::rand::rngs::StdRng::from_seed(OsRng.gen());
+            let seed = [1,0,0,0, 23,0,0,0, 200,1,0,0, 210,30,0,0,
+                    0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0];
+            let mut rng = ::rand::rngs::StdRng::from_seed(seed);
             let mut swarm = runtime.block_on(self.factory.launch_swarm(
                 &mut rng,
                 self.tests.initial_validator_count,
