@@ -16,15 +16,17 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use url::Url;
+use std::env;
 
-static NODE_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:39397").unwrap());
+//static NODE_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:39397").unwrap());
 
 const CHAINID: u8 = 4;
-const FANOUT: u64 = 10;
-const PERSPAWN: u64 = 20;
-const MASTER_SEED: u64 = 0;
+// const MASTER_SEED: u64 = 0;
+
+const FANOUT: u64 = 2;
+const PERSPAWN: u64 = 2;
 const NUM_ACCOUNTS: u64 = FANOUT * PERSPAWN;
-const BATCH_SIZE: u64 = 1000;
+const BATCH_SIZE: u64 = 2;
 const NUM_BATCHES: u64 = 2;
 
 /**
@@ -32,12 +34,12 @@ const NUM_BATCHES: u64 = 2;
  * query chain for sqn
  */
 
-async fn recreate_accounts() -> Vec<LocalAccount> {
+async fn recreate_accounts(url: Url, master_seed: u64) -> Vec<LocalAccount> {
     let start: Instant = Instant::now();
-    let rest_client = Client::new(NODE_URL.clone());
+    let rest_client = Client::new(url);
     let mut accounts: Vec<LocalAccount> = Vec::new();
     for i in (0..FANOUT) {
-        let mut rng = rand::rngs::StdRng::seed_from_u64(MASTER_SEED + i);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(master_seed + i);
         let mut account_map = HashMap::new();
         let mut results: Vec<_> = Vec::new();
         for i in 0..PERSPAWN {
@@ -72,13 +74,23 @@ fn get_indexes(rng: &mut rand::rngs::StdRng) -> (usize, usize) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("rest_url {}", NODE_URL.clone());
+    let args: Vec<String> = env::args().collect();
+    assert_eq!(args.len(), 3);
+    //println!("rest_url entered {} {}", args[0], args[1]);
+    //let mut htp = "http://";
+    // let unl = if args.len() == 2 {
+    //     Url::from_str(args[1].as_str()).unwrap()
+    // } else {
+    //     Url::from_str("http://127.0.0.1:8080").unwrap()
+    // };
 
-    let rest_client = Client::new(NODE_URL.clone());
+    let unl = Url::from_str(args[1].as_str()).unwrap();
+    let master_seed: u64 = args[2].parse().unwrap();
+    let rest_client = Client::new(unl.clone());
     let coin_client = CoinClient::new(&rest_client);
 
-    let mut accounts = recreate_accounts().await;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(MASTER_SEED + FANOUT);
+    let mut accounts = recreate_accounts(unl, master_seed).await;
+    let mut rng = rand::rngs::StdRng::seed_from_u64(master_seed + FANOUT);
     let mut txns_results = Vec::new();
     let start = Instant::now();
     for i in (0..NUM_BATCHES) {

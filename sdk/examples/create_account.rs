@@ -19,20 +19,18 @@ use rand::SeedableRng;
 use rand::{rngs, RngCore};
 use std::thread::spawn;
 use std::time::{Duration, Instant};
-use std::{str::FromStr, thread};
+use std::{env, str::FromStr, thread};
 use url::Url;
 //static NODE_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:8080").unwrap());
-static NODE_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:41599").unwrap());
-static FAUCET_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:8081").unwrap());
+// static NODE_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:41599").unwrap());
+// static FAUCET_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:8081").unwrap());
 
 const ROUNDS: u64 = 2;
-const FANOUT: u64 = 20;
-const PERSPAWN: u64 = 50;
+const FANOUT: u64 = 2;
+const PERSPAWN: u64 = 2;
 const MASTER_SEED: u64 = 0;
-// const ROUNDS: u64 = 200;
-// const FANOUT: u64 = 10;
-// const PERSPAWN: u64 = 20;
-// const MASTER_SEED: u64 = 2000;
+const PERACCOUNT : u64 = 100_000_000_000;//1k aptos
+
 /**
  * spraw 20 tasks, each task will:
  * take a seed
@@ -41,10 +39,10 @@ const MASTER_SEED: u64 = 0;
  * create 49 bobs
  * fund bob by alice
  */
-async fn fanout(seed: u64, check: bool) {
-    //println!("seed {}", seed);
-    let rest_client = Client::new(NODE_URL.clone());
-    let faucet_client = FaucetClient::new(FAUCET_URL.clone(), NODE_URL.clone());
+async fn fanout(seed: u64, check: bool, node_url: Url, fauc_url: Url) {
+    println!("seed {}, creating {} accounts", seed, PERSPAWN);
+    let rest_client = Client::new(node_url.clone());
+    let faucet_client = FaucetClient::new(fauc_url.clone(), node_url.clone());
     let coin_client = CoinClient::new(&rest_client);
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let mut accounts: Vec<AccountAddress> = Vec::new();
@@ -52,27 +50,27 @@ async fn fanout(seed: u64, check: bool) {
     let mut alice = LocalAccount::generate(&mut rng);
     accounts.push(alice.address());
     faucet_client
-        .fund(alice.address(), 5_000_000_000)
+        .fund(alice.address(), PERACCOUNT*PERSPAWN)
         .await
         .context("Failed to fund Alice's account");
 
-    thread::sleep(time::Duration::from_secs(1));
     // println!("account {:?}", alice.address());
-    // match rest_client.get_account(alice.address()).await {
-    //     Ok(r) => {
-    //         println!("account info {:?}", r.inner());
-    //     },
-    //     Err(e) => {
-    //         println!("account error {:?}", e);
-    //     },
-    // }
-    let a_info = rest_client.get_account(alice.address()).await.unwrap();
-    *alice.sequence_number_mut() = a_info.inner().sequence_number;
+    match rest_client.get_account(alice.address()).await {
+        Ok(r) => {
+//            println!("account info {:?}", r.inner());
+            let a_info = rest_client.get_account(alice.address()).await.unwrap();
+            *alice.sequence_number_mut() = a_info.inner().sequence_number;
+        },
+        Err(e) => {
+            println!("seed {}, alice account error {:?}", seed, e);
+            panic!("account creation");
+        },
+    }
 
     let mut txns: Vec<aptos_types::transaction::SignedTransaction> = Vec::new();
     for i in 1..PERSPAWN {
         let bob = LocalAccount::generate(&mut rng);
-        txns.push(coin_client.create_and_pay(&mut alice, bob.address(), 100_000_000, 4, None));
+        txns.push(coin_client.create_and_pay(&mut alice, bob.address(), PERACCOUNT, 4, None));
         accounts.push(bob.address());
     }
 
@@ -121,14 +119,18 @@ async fn fanout(seed: u64, check: bool) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("faucet_url {}", FAUCET_URL.clone());
+    let args: Vec<String> = env::args().collect();
+    assert_eq!(args.len(), 3);
+    println!("rest_url entered {} {} {}", args[0], args[1], args[2]);
+    let node_url = Url::from_str(args[1].as_str()).unwrap();
+    let fauc_url = Url::from_str(args[2].as_str()).unwrap();
     let mut m: u64 = 0;
     for r in 0..ROUNDS {
         let start = Instant::now();
 
         let mut handles: Vec<_> = Vec::new();
         for i in 0..FANOUT {
-            let handle = tokio::task::spawn(fanout(m + MASTER_SEED, true));
+            let handle = tokio::task::spawn(fanout(m + MASTER_SEED, true, node_url.clone(), fauc_url.clone()));
             m += 1;
             handles.push(handle);
         }
