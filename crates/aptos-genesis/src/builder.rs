@@ -75,7 +75,7 @@ impl ValidatorNodeConfig {
         // Create the data dir and set it appropriately
         let dir = base_dir.join(&name);
         std::fs::create_dir_all(dir.as_path())?;
-        config.set_data_dir(dir.clone());
+        config.set_data_dir(dir.clone());//set to /home/pwang/aptos_test
 
         Ok(ValidatorNodeConfig {
             name,
@@ -496,6 +496,14 @@ impl Builder {
             .map(|i| self.generate_validator_config(i, &mut rng, &template))
             .collect::<anyhow::Result<Vec<ValidatorNodeConfig>>>()?;
 
+        // set the first validator as every validators' initial configured seed peer.
+        let seed_config = &validators[0].config.validator_network.as_ref().unwrap();
+        let seeds = build_seed_for_network(seed_config, PeerRole::Validator);
+        for v in &mut validators {
+            let network = v.config.validator_network.as_mut().unwrap();
+            network.seeds = seeds.clone();
+        }
+
         // Build genesis
         let (genesis, waypoint) = self.genesis_ceremony(&mut validators, root_key.public_key())?;
 
@@ -517,8 +525,8 @@ impl Builder {
     where
         R: rand::RngCore + rand::CryptoRng,
     {
-        let name = index.to_string();
-
+        let mut name = String::from("validator");
+        name.push_str(&index.to_string());
         let mut config = template.clone();
         let mut genesis_stake_amount = 1;
         if let Some(init_config) = &self.init_config {

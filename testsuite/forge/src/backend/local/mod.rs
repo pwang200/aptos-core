@@ -139,26 +139,26 @@ impl LocalFactory {
             guard,
         )?;
 
-        // Launch the swarm
-        swarm
-            .launch()
-            .await
-            .with_context(|| format!("Swarm logs can be found here: {}", swarm.logs_location()))?;
-
-        // Add and launch the fullnodes
-        let validator_peer_ids = swarm.validators().map(|v| v.peer_id()).collect::<Vec<_>>();
-        for validator_peer_id in validator_peer_ids.iter().take(number_of_fullnodes) {
-            let _ = swarm
-                .add_validator_fullnode(
-                    version,
-                    vfn_config
-                        .clone()
-                        .unwrap_or_else(NodeConfig::get_default_vfn_config),
-                    *validator_peer_id,
-                )
-                .unwrap();
-        }
-        swarm.wait_all_alive(Duration::from_secs(60)).await?;
+        // // Launch the swarm
+        // swarm
+        //     .launch()
+        //     .await
+        //     .with_context(|| format!("Swarm logs can be found here: {}", swarm.logs_location()))?;
+        //
+        // // Add and launch the fullnodes
+        // let validator_peer_ids = swarm.validators().map(|v| v.peer_id()).collect::<Vec<_>>();
+        // for validator_peer_id in validator_peer_ids.iter().take(number_of_fullnodes) {
+        //     let _ = swarm
+        //         .add_validator_fullnode(
+        //             version,
+        //             vfn_config
+        //                 .clone()
+        //                 .unwrap_or_else(NodeConfig::get_default_vfn_config),
+        //             *validator_peer_id,
+        //         )
+        //         .unwrap();
+        // }
+        // swarm.wait_all_alive(Duration::from_secs(60)).await?;
 
         Ok(swarm)
     }

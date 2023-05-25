@@ -13,6 +13,8 @@ use crate::{
 };
 use rand::{rngs::StdRng, SeedableRng};
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+use aptos_types::network_address::NetworkAddress;
 
 pub struct ValidatorSwarm {
     pub nodes: Vec<NodeConfig>,
@@ -69,11 +71,12 @@ pub fn validator_swarm_for_testing(nodes: usize) -> ValidatorSwarm {
 /// and handshake protocol version.
 pub fn build_seed_for_network(seed_config: &NetworkConfig, seed_role: PeerRole) -> PeerSet {
     let seed_pubkey = aptos_crypto::PrivateKey::public_key(&seed_config.identity_key());
-    let seed_addr = seed_config
-        .listen_address
-        .clone()
+    // let seed_addr = seed_config
+    //     .listen_address
+    //     .clone()
+    //     .append_prod_protos(seed_pubkey, HANDSHAKE_VERSION);
+    let seed_addr = NetworkAddress::from_str("/ip4/192.168.1.77/tcp/6180").unwrap()
         .append_prod_protos(seed_pubkey, HANDSHAKE_VERSION);
-
     let mut keys = HashSet::new();
     keys.insert(seed_pubkey);
     let mut seeds = HashMap::default();

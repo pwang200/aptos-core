@@ -116,15 +116,22 @@ impl LocalSwarm {
         R: ::rand::RngCore + ::rand::CryptoRng,
     {
         info!("Building a new swarm");
-        let dir_actual = if let Some(dir_) = dir {
-            if dir_.exists() {
-                fs::remove_dir_all(&dir_)?;
-            }
-            fs::create_dir_all(&dir_)?;
-            SwarmDirectory::Persistent(dir_)
-        } else {
-            SwarmDirectory::Temporary(TempDir::new()?)
-        };
+        let mut hack_dir = PathBuf::from("/home/pwang/aptos/hack/");
+        if hack_dir.exists() {
+            fs::remove_dir_all(&hack_dir)?;
+        }
+        fs::create_dir_all(&hack_dir)?;
+        let dir_actual = SwarmDirectory::Persistent(hack_dir);
+
+        // let dir_actual = if let Some(dir_) = dir {
+        //     if dir_.exists() {
+        //         fs::remove_dir_all(&dir_)?;
+        //     }
+        //     fs::create_dir_all(&dir_)?;
+        //     SwarmDirectory::Persistent(dir_)
+        // } else {
+        //     SwarmDirectory::Temporary(TempDir::new()?)
+        // };
 
         let (root_key, genesis, genesis_waypoint, validators) =
             aptos_genesis::builder::Builder::new(
