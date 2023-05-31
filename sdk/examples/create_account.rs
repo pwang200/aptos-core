@@ -25,11 +25,11 @@ use url::Url;
 // static NODE_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:41599").unwrap());
 // static FAUCET_URL: Lazy<Url> = Lazy::new(|| Url::from_str("http://127.0.0.1:8081").unwrap());
 
-const ROUNDS: u64 = 2;
-const FANOUT: u64 = 2;
-const PERSPAWN: u64 = 2;
+const ROUNDS: u64 = 1;
+const FANOUT: u64 = 5;
+const PERSPAWN: u64 = 10;
 const MASTER_SEED: u64 = 0;
-const PERACCOUNT : u64 = 100_000_000_000;//1k aptos
+const PERACCOUNT: u64 = 100_000_000_000;//1k aptos
 
 /**
  * spraw 20 tasks, each task will:
@@ -39,25 +39,22 @@ const PERACCOUNT : u64 = 100_000_000_000;//1k aptos
  * create 49 bobs
  * fund bob by alice
  */
-async fn fanout(seed: u64, check: bool, node_url: Url, fauc_url: Url) {
-    println!("seed {}, creating {} accounts", seed, PERSPAWN);
+async fn fanout(seed: u64, node_url: Url, fauc_url: Url) {
+    println!("seed {}, creating {} accounts", seed, PERSPAWN*PERSPAWN);
     let rest_client = Client::new(node_url.clone());
     let faucet_client = FaucetClient::new(fauc_url.clone(), node_url.clone());
     let coin_client = CoinClient::new(&rest_client);
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-    let mut accounts: Vec<AccountAddress> = Vec::new();
-
+    let mut accounts: Vec<LocalAccount> = Vec::new();
     let mut alice = LocalAccount::generate(&mut rng);
-    accounts.push(alice.address());
     faucet_client
-        .fund(alice.address(), PERACCOUNT*PERSPAWN)
+        .fund(alice.address(), PERACCOUNT * PERSPAWN * PERSPAWN)
         .await
         .context("Failed to fund Alice's account");
 
     // println!("account {:?}", alice.address());
     match rest_client.get_account(alice.address()).await {
         Ok(r) => {
-//            println!("account info {:?}", r.inner());
             let a_info = rest_client.get_account(alice.address()).await.unwrap();
             *alice.sequence_number_mut() = a_info.inner().sequence_number;
         },
@@ -70,10 +67,10 @@ async fn fanout(seed: u64, check: bool, node_url: Url, fauc_url: Url) {
     let mut txns: Vec<aptos_types::transaction::SignedTransaction> = Vec::new();
     for i in 1..PERSPAWN {
         let bob = LocalAccount::generate(&mut rng);
-        txns.push(coin_client.create_and_pay(&mut alice, bob.address(), PERACCOUNT, 4, None));
-        accounts.push(bob.address());
+        txns.push(coin_client.create_and_pay(&mut alice, bob.address(), PERACCOUNT * PERSPAWN, 4, None));
+        accounts.push(bob);
     }
-
+    accounts.push(alice);
     let mut results: Vec<_> = Vec::new();
     for tx in &mut txns {
         results.push(rest_client.submit(tx));
@@ -87,29 +84,46 @@ async fn fanout(seed: u64, check: bool, node_url: Url, fauc_url: Url) {
             .context("Failed when waiting for transaction");
         //println!("tx {:?}", tx.unwrap().inner().transaction_info());
     }
-    println!("tx done, seed {}", seed);
 
-    if check {
-        for a in accounts {
-            coin_client.get_account_balance(&a).await.unwrap();
-
-            // println!(
-            //     "{} {:?}",
-            //     a.to_hex_literal(),
-            //     coin_client
-            //         .get_account_balance(&a)
-            //         .await
-            //         .context("Failed to get account balance")
-            // );
-            // let ac = rest_client
-            //     .get_account(a)
-            //     .await
-            //     .context("Failed to get account")
-            //     .unwrap();
-            // let acc = ac.inner();
-            // println!("{} {:?}", a.to_hex_literal(), acc); //.sequence_number
+    for a in &mut accounts {
+        match rest_client.get_account(a.address()).await {
+            Ok(r) => {
+                let a_info = rest_client.get_account(a.address()).await.unwrap();
+                *a.sequence_number_mut() = a_info.inner().sequence_number;
+            },
+            Err(e) => {
+                println!("seed {}, account error {:?}", seed, e);
+                panic!("account creation");
+            },
         }
     }
+
+    let mut addresses: Vec<AccountAddress> = Vec::new();
+    let mut txns: Vec<aptos_types::transaction::SignedTransaction> = Vec::new();
+    for i in 0..accounts.len() {
+        for i in 1..PERSPAWN {
+            let bob = LocalAccount::generate(&mut rng);
+            txns.push(coin_client.create_and_pay(&mut accounts[i as usize], bob.address(), PERACCOUNT, 4, None));
+            addresses.push(bob.address());
+        }
+    }
+    let mut results: Vec<_> = Vec::new();
+    for tx in &mut txns {
+        results.push(rest_client.submit(tx));
+    }
+    let mut results = join_all(results).await;
+    for r in results {
+        let tx = r.unwrap().into_inner();
+        let tx = rest_client
+            .wait_for_transaction(&tx)
+            .await
+            .context("Failed when waiting for transaction");
+    }
+    for a in addresses {
+        coin_client.get_account_balance(&a).await.unwrap();
+    }
+
+    println!("tx done, seed {}", seed);
 }
 
 /**
@@ -130,7 +144,7 @@ async fn main() -> Result<()> {
 
         let mut handles: Vec<_> = Vec::new();
         for i in 0..FANOUT {
-            let handle = tokio::task::spawn(fanout(m + MASTER_SEED, true, node_url.clone(), fauc_url.clone()));
+            let handle = tokio::task::spawn(fanout(m + MASTER_SEED, node_url.clone(), fauc_url.clone()));
             m += 1;
             handles.push(handle);
         }
@@ -270,3 +284,19 @@ async fn main() -> Result<()> {
 // //     );
 // // }
 // // println!("Time: {:?}", duration);
+
+// println!(
+//     "{} {:?}",
+//     a.to_hex_literal(),
+//     coin_client
+//         .get_account_balance(&a)
+//         .await
+//         .context("Failed to get account balance")
+// );
+// let ac = rest_client
+//     .get_account(a)
+//     .await
+//     .context("Failed to get account")
+//     .unwrap();
+// let acc = ac.inner();
+// println!("{} {:?}", a.to_hex_literal(), acc); //.sequence_number
