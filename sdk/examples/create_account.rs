@@ -32,13 +32,13 @@ use static_assertions;
  * can create the same accounts without communicate.
  */
 
-const EXPROUNDS: u32 = 4;
-const PERROUND: u64 = 10;
+const EXPROUNDS: u32 = 6;
+const PERROUND: u64 = 3;
 const ONEAPT: u64 = 100_000_000;
 const PERACCOUNT: u64 = ONEAPT * 1000;//1k aptos
 static_assertions::const_assert!(EXPROUNDS >= 1 );
 
-async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: u64, node_url: Url)
+async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: u64, node_url: Url, get_sqn: bool)
                 -> Vec<LocalAccount> {
     println!("fanout: seed {}, to_create {}, amount {}", seed, to_create, amount / ONEAPT);
     let rest_client = Client::new(node_url.clone());
@@ -46,15 +46,15 @@ async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: 
     let mut accounts: Vec<LocalAccount> = Vec::new();
     let mut txns: Vec<aptos_types::transaction::SignedTransaction> = Vec::new();
 
-    match rest_client.get_account_balance(alice.address()).await {
-        Ok(r) => {
-            println!("fanout: account {}, balance {:?}, seed {}, to_create {}, amount {}", alice.address(), r.inner().coin.value.inner() / ONEAPT, seed, to_create, amount / ONEAPT);
-        },
-        Err(e) => {
-            println!("fanout: account {}, error {:?}", alice.address(), e);
-            panic!("account balance");
-        },
-    }
+    // match rest_client.get_account_balance(alice.address()).await {
+    //     Ok(r) => {
+    //         println!("fanout: account {}, balance {:?}, seed {}, to_create {}, amount {}", alice.address(), r.inner().coin.value.inner() / ONEAPT, seed, to_create, amount / ONEAPT);
+    //     },
+    //     Err(e) => {
+    //         println!("fanout: account {}, error {:?}", alice.address(), e);
+    //         panic!("account balance");
+    //     },
+    // }
 
     for i in 0..to_create {
         println!("SEED={}", seed);
@@ -91,37 +91,39 @@ async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: 
         // .context("Failed when waiting for transaction");
         //println!("tx {:?}", tx.unwrap().inner().transaction_info());
     }
-    for a in &mut accounts {
-        match rest_client.get_account(a.address()).await {
-            Ok(r) => {
-                let a_info = rest_client.get_account(a.address()).await.unwrap();
-                *a.sequence_number_mut() = a_info.inner().sequence_number;
-                //println!("account {}, info {:?}", a.address(), a_info.inner());
-            },
-            Err(e) => {
-                println!("account {}, error {:?}", a.address(), e);
-                panic!("account creation");
-            },
+    if get_sqn {
+        for a in &mut accounts {
+            match rest_client.get_account(a.address()).await {
+                Ok(r) => {
+                    let a_info = rest_client.get_account(a.address()).await.unwrap();
+                    *a.sequence_number_mut() = a_info.inner().sequence_number;
+                    //println!("account {}, info {:?}", a.address(), a_info.inner());
+                },
+                Err(e) => {
+                    println!("account {}, error {:?}", a.address(), e);
+                    panic!("account creation");
+                },
+            }
         }
     }
     accounts
 }
 
-async fn fanout_multi(mut alice: LocalAccount, mut seed: u64, rounds: u32, per_round: u64, amount: u64, node_url: Url)
+async fn fanout_multi(mut alice: LocalAccount, mut seed: u64, rounds: u32, per_round: u64, amount: u64, node_url: Url, get_sqn : bool)
                       -> Vec<LocalAccount>
 {
     let expected_end_seed = seed + (per_round + 1).pow(rounds) - 1;
-    let rest_client = Client::new(node_url.clone());
-    match rest_client.get_account_balance(alice.address()).await {
-        Ok(r) => {
-            println!("fanout_multi: expected_end_seed {}, rounds {}, per_round {}, amount {}, account {}, balance {:?}, seed {}", expected_end_seed, rounds, per_round, amount / ONEAPT, alice.address(), r.inner().coin.value.inner() / ONEAPT, seed);
-        },
-        Err(e) => {
-            println!("fanout_multi: account {}, error {:?}", alice.address(), e);
-            panic!("account balance");
-        },
-    }
-    //println!("fanout_multi: expected_end_seed {}, rounds {}, per_round {}, amount {}", expected_end_seed, rounds, per_round, amount);
+    // let rest_client = Client::new(node_url.clone());
+    // match rest_client.get_account_balance(alice.address()).await {
+    //     Ok(r) => {
+    //         println!("fanout_multi: expected_end_seed {}, rounds {}, per_round {}, amount {}, account {}, balance {:?}, seed {}", expected_end_seed, rounds, per_round, amount / ONEAPT, alice.address(), r.inner().coin.value.inner() / ONEAPT, seed);
+    //     },
+    //     Err(e) => {
+    //         println!("fanout_multi: account {}, error {:?}", alice.address(), e);
+    //         panic!("account balance");
+    //     },
+    // }
+    println!("fanout_multi: expected_end_seed {}, rounds {}, per_round {}, amount {}", expected_end_seed, rounds, per_round, amount);
     let mut accounts: Vec<LocalAccount> = Vec::new();
     accounts.push(alice);
 
@@ -130,8 +132,9 @@ async fn fanout_multi(mut alice: LocalAccount, mut seed: u64, rounds: u32, per_r
         let sub_round = (per_round + 1).pow(rounds - 1 - r);
         let amount = amount * sub_round;
         let mut accounts_round: Vec<LocalAccount> = Vec::new();
+        let gs = get_sqn || r < rounds - 1;
         for a in accounts {
-            let mut ars = fanout(a, seed.clone(), per_round, amount.clone(), node_url.clone()).await;
+            let mut ars = fanout(a, seed.clone(), per_round, amount.clone(), node_url.clone(), gs).await;
             seed += per_round;
             accounts_round.append(&mut ars);
         }
@@ -184,7 +187,7 @@ async fn main() -> Result<()> {
     // PERROUND -1 more accounts, or PERROUND * PERROUND -1 more accounts depending on rounds
     let amount = PERACCOUNT * PERROUND.pow(if EXPROUNDS >= 2 { EXPROUNDS - 2 } else { 0 });
     println!("First round amount {}", amount / ONEAPT);
-    let mut accounts = fanout_multi(alice, 1, if EXPROUNDS >= 2 { 2 } else { 1 }, PERROUND - 1, amount, node_url.clone()).await;
+    let mut accounts = fanout_multi(alice, 1, if EXPROUNDS >= 2 { 2 } else { 1 }, PERROUND - 1, amount, node_url.clone(), true).await;
     println!("First round number of accounts {:?}", accounts.len());
     let duration_wait = incremental_start.elapsed();
     println!("duration: {:?}", duration_wait);
@@ -196,7 +199,7 @@ async fn main() -> Result<()> {
         let mut handles: Vec<_> = Vec::new();
         for a in accounts {
             println!("spawn, seed {}", seed);
-            let handle = tokio::task::spawn(fanout_multi(a, seed.clone(), EXPROUNDS - 2, PERROUND - 1, PERACCOUNT, node_url.clone()));
+            let handle = tokio::task::spawn(fanout_multi(a, seed.clone(), EXPROUNDS - 2, PERROUND - 1, PERACCOUNT, node_url.clone(), false));
             seed += PERROUND.pow(EXPROUNDS - 2) - 1;
             handles.push(handle);
         }
