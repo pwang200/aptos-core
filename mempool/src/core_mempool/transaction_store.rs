@@ -499,7 +499,7 @@ impl TransactionStore {
                 );
                 self.index_remove(transaction);
             }
-            trace!(
+            info!(
                 LogSchema::new(LogEntry::CleanCommittedTxn).txns(rm_txns),
                 "txns cleaned with committing tx {}:{}",
                 address,
@@ -543,7 +543,7 @@ impl TransactionStore {
                     txn_to_remove.get_sender(),
                     txn_to_remove.sequence_info.transaction_sequence_number,
                 );
-                trace!(LogSchema::new(LogEntry::CleanRejectedTxn).txns(txns_log));
+                info!(LogSchema::new(LogEntry::CleanRejectedTxn).txns(txns_log));
             }
         }
     }

@@ -28,6 +28,7 @@ use std::{
     collections::{HashMap, HashSet},
     time::{Duration, SystemTime},
 };
+use crate::logging::LogEvent;
 
 pub struct Mempool {
     // Stores the metadata of all transactions in mempool (of all states).
@@ -175,6 +176,8 @@ impl Mempool {
             self.transactions.get_bucket(ranking_score),
             ranking_score,
         );
+        let le = if status.code == MempoolStatusCode::Accepted {LogEvent::Success} else {LogEvent::Terminated};
+        info!(LogSchema::new_event(LogEntry::AddTxn, Some(le)));
         status
     }
 
