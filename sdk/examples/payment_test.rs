@@ -21,9 +21,9 @@ use move_core_types::account_address::AccountAddress;
 
 const CHAINID: u8 = 4;
 const SQN_BATCH: u64 = 20;
-const FANOUT: u64 = 10;
-const BATCH_SIZE: u64 = 100;
-const NUM_BATCHES: u64 = 10;
+// const FANOUT: u64 = 100;
+// const BATCH_SIZE: u64 = 100;
+// const NUM_BATCHES: u64 = 30;
 
 /**
  * create account array, segment by segment.
@@ -144,22 +144,27 @@ async fn fanout(mut senders: Vec<LocalAccount>, receivers: Vec<AccountAddress>, 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
-    assert_eq!(args.len(), 4);
+    assert_eq!(args.len(), 7);
     let url = Url::from_str(args[1].as_str()).unwrap();
     let start_seed: u64 = args[2].parse().unwrap();
     let num_seeds: u64 = args[3].parse().unwrap();
+    let num_spawns: u64 = args[4].parse().unwrap();
+    let num_batches: u64 = args[5].parse().unwrap();
+    let batch_size: u64 = args[6].parse().unwrap();
     assert!(num_seeds > 0);
-    assert!(num_seeds % FANOUT == 0);
+    assert_eq!(num_seeds % num_spawns, 0);
+    println!("url {}, start_seed {}, num_seeds {}, fanout {}, num_batches {}, batch_size {}",
+             args[1].as_str(), start_seed, num_seeds, num_spawns, num_batches, batch_size);
 
     let start = Instant::now();
     let (mut accounts, receivers) = recreate_accounts(url.clone(), start_seed, num_seeds).await;
     println!("total number of accounts {}, time: {:?}", accounts.len(), start.elapsed());
 
     let mut handles: Vec<_> = Vec::new();
-    let per_spawn = (num_seeds/FANOUT) as usize;
-    for i in 0..FANOUT {
-        let senders : Vec<LocalAccount>= accounts.drain(accounts.len() - per_spawn..).collect();
-        let handle = tokio::task::spawn(fanout(senders, receivers.clone(), NUM_BATCHES, BATCH_SIZE, url.clone()));
+    let per_spawn = (num_seeds / num_spawns) as usize;
+    for i in 0..num_spawns {
+        let senders: Vec<LocalAccount> = accounts.drain(accounts.len() - per_spawn..).collect();
+        let handle = tokio::task::spawn(fanout(senders, receivers.clone(), num_batches, batch_size,url.clone()));
         handles.push(handle);
     }
     assert!(accounts.is_empty());
