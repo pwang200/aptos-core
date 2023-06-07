@@ -7,45 +7,21 @@ use aptos_sdk::{
     rest_client::{Client, FaucetClient},
     types::LocalAccount,
 };
-use once_cell::sync::Lazy;
 use std::str::FromStr;
+use std::time::Instant;
 use url::Url;
-
-// :!:>section_1c
-static NODE_URL: Lazy<Url> = Lazy::new(|| {
-    Url::from_str(
-        std::env::var("APTOS_NODE_URL")
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or("https://fullnode.devnet.aptoslabs.com"),
-    )
-    .unwrap()
-});
-
-static FAUCET_URL: Lazy<Url> = Lazy::new(|| {
-    Url::from_str(
-        std::env::var("APTOS_FAUCET_URL")
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or("https://faucet.devnet.aptoslabs.com"),
-    )
-    .unwrap()
-});
-// <:!:section_1c
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // :!:>section_1a
-    let rest_client = Client::new(NODE_URL.clone());
-    let faucet_client = FaucetClient::new(FAUCET_URL.clone(), NODE_URL.clone()); // <:!:section_1a
+    let node_url = Url::from_str("http://127.0.0.1:8080").unwrap();
+    let fauc_url = Url::from_str("http://127.0.0.1:8081").unwrap();
+    let rest_client = Client::new(node_url.clone());
+    let coin_client = CoinClient::new(&rest_client);
+    let faucet_client = FaucetClient::new(fauc_url.clone(), node_url.clone());
 
-    // :!:>section_1b
-    let coin_client = CoinClient::new(&rest_client); // <:!:section_1b
-
-    // Create two accounts locally, Alice and Bob.
-    // :!:>section_2
     let mut alice = LocalAccount::generate(&mut rand::rngs::OsRng);
-    let bob = LocalAccount::generate(&mut rand::rngs::OsRng); // <:!:section_2
+    let bob = LocalAccount::generate(&mut rand::rngs::OsRng);
 
     // Print account addresses.
     println!("\n=== Addresses ===");
@@ -55,7 +31,7 @@ async fn main() -> Result<()> {
     // Create the accounts on chain, but only fund Alice.
     // :!:>section_3
     faucet_client
-        .fund(alice.address(), 100_000_000)
+        .fund(alice.address(), 1000_000_000)
         .await
         .context("Failed to fund Alice's account")?;
     faucet_client
@@ -81,6 +57,7 @@ async fn main() -> Result<()> {
     );
 
     // Have Alice send Bob some coins.
+    let start = Instant::now();
     let txn_hash = coin_client
         .transfer(&mut alice, bob.address(), 1_000, None)
         .await
@@ -89,9 +66,10 @@ async fn main() -> Result<()> {
         .wait_for_transaction(&txn_hash)
         .await
         .context("Failed when waiting for the transfer transaction")?;
+    println!("Total time: {:?}", start.elapsed());
 
     // Print intermediate balances.
-    println!("\n=== Intermediate Balances ===");
+    println!("\n=== End Balances ===");
     // :!:>section_4
     println!(
         "Alice: {:?}",
@@ -108,34 +86,7 @@ async fn main() -> Result<()> {
             .context("Failed to get Bob's account balance the second time")?
     ); // <:!:section_4
 
-    // Have Alice send Bob some more coins.
-    // :!:>section_5
-    let txn_hash = coin_client
-        .transfer(&mut alice, bob.address(), 1_000, None)
-        .await
-        .context("Failed to submit transaction to transfer coins")?; // <:!:section_5
-                                                                     // :!:>section_6
-    rest_client
-        .wait_for_transaction(&txn_hash)
-        .await
-        .context("Failed when waiting for the transfer transaction")?; // <:!:section_6
 
-    // Print final balances.
-    println!("\n=== Final Balances ===");
-    println!(
-        "Alice: {:?}",
-        coin_client
-            .get_account_balance(&alice.address())
-            .await
-            .context("Failed to get Alice's account balance the second time")?
-    );
-    println!(
-        "Bob: {:?}",
-        coin_client
-            .get_account_balance(&bob.address())
-            .await
-            .context("Failed to get Bob's account balance the second time")?
-    );
 
     Ok(())
 }
