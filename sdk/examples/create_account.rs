@@ -32,11 +32,11 @@ use static_assertions;
  * can create the same accounts without communicate.
  */
 
-const EXPROUNDS: u32 = 6;
-const PERROUND: u64 = 3;
+// const EXPROUNDS: u32 = 6;
+// const PERROUND: u64 = 3;
 const ONEAPT: u64 = 100_000_000;
-const PERACCOUNT: u64 = ONEAPT * 1000;//1k aptos
-static_assertions::const_assert!(EXPROUNDS >= 1 );
+// const PERACCOUNT: u64 = ONEAPT * 1000;//1k aptos
+// static_assertions::const_assert!(EXPROUNDS >= 1 );
 
 async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: u64, node_url: Url, get_sqn: bool)
                 -> Vec<LocalAccount> {
@@ -148,10 +148,14 @@ async fn fanout_multi(mut alice: LocalAccount, mut seed: u64, rounds: u32, per_r
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
-    assert_eq!(args.len(), 3);
+    assert_eq!(args.len(), 6);
     println!("rest_url entered {} {} {}", args[0], args[1], args[2]);
     let node_url = Url::from_str(args[1].as_str()).unwrap();
     let fauc_url = Url::from_str(args[2].as_str()).unwrap();
+    let exp_round: u32 = args[3].parse().unwrap();
+    let per_round: u64 = args[4].parse().unwrap();
+    let per_account: u64 = ONEAPT * args[5].parse::<u64>().unwrap();
+    assert!(exp_round > 0 && per_round > 0 && per_account > 0);
 
     let start = Instant::now();
     let incremental_start = Instant::now();
@@ -163,7 +167,7 @@ async fn main() -> Result<()> {
 
     // first account from faucet
     let mut alice = LocalAccount::generate(&mut rng);
-    let amount = PERACCOUNT * PERROUND.pow(EXPROUNDS);
+    let amount = per_account * per_round.pow(exp_round);
     faucet_client
         .fund(alice.address(), amount)
         .await
@@ -185,22 +189,23 @@ async fn main() -> Result<()> {
     println!("duration: {:?}", duration_wait);
 
     // PERROUND -1 more accounts, or PERROUND * PERROUND -1 more accounts depending on rounds
-    let amount = PERACCOUNT * PERROUND.pow(if EXPROUNDS >= 2 { EXPROUNDS - 2 } else { 0 });
+    let amount = per_account * per_round.pow(if exp_round >= 2 { exp_round - 2 } else { 0 });
     println!("First round amount {}", amount / ONEAPT);
-    let mut accounts = fanout_multi(alice, 1, if EXPROUNDS >= 2 { 2 } else { 1 }, PERROUND - 1, amount, node_url.clone(), true).await;
+    let mut accounts = fanout_multi(alice, 1, if exp_round >= 2 { 2 } else { 1 }, per_round - 1, amount, node_url.clone(), true).await;
     println!("First round number of accounts {:?}", accounts.len());
     let duration_wait = incremental_start.elapsed();
     println!("duration: {:?}", duration_wait);
 
     // more rounds
-    if EXPROUNDS > 2 {
+    if exp_round > 2 {
         println!("more than 2 rounds");
-        let mut seed = PERROUND * PERROUND;
+        let mut seed = per_round * per_round;
         let mut handles: Vec<_> = Vec::new();
         for a in accounts {
             println!("spawn, seed {}", seed);
-            let handle = tokio::task::spawn(fanout_multi(a, seed.clone(), EXPROUNDS - 2, PERROUND - 1, PERACCOUNT, node_url.clone(), false));
-            seed += PERROUND.pow(EXPROUNDS - 2) - 1;
+            let handle = tokio::task::spawn(
+                fanout_multi(a, seed.clone(), exp_round - 2, per_round - 1, per_account, node_url.clone(), false));
+            seed += per_round.pow(exp_round - 2) - 1;
             handles.push(handle);
         }
         for h in handles {
