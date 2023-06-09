@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use url::Url;
-use std::env;
+use std::{env, io};
 use move_core_types::account_address::AccountAddress;
 
 const CHAINID: u8 = 4;
@@ -164,9 +164,19 @@ async fn main() -> Result<()> {
 
     let start = Instant::now();
     let (mut accounts, receivers) = recreate_accounts(url.clone(), start_seed, num_seeds).await;
+    // for a in &accounts{
+    //     println!("account {}", a.address());
+    // }
+    // for r in &receivers{
+    //     println!("receiver {}", r);
+    // }
     println!("total number of accounts {}, time: {:?}", accounts.len(), start.elapsed());
 
     if num_spawns != 0 {
+        println!("wait for other clients, then press enter when all clients are ready");
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
         assert_eq!(num_seeds % num_spawns, 0);
         let mut handles: Vec<_> = Vec::new();
         let per_spawn = (num_seeds / num_spawns) as usize;
