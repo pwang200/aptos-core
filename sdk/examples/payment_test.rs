@@ -159,7 +159,6 @@ async fn main() -> Result<()> {
     let num_batches: u64 = args[5].parse().unwrap();
     let batch_size: u64 = args[6].parse().unwrap();
     assert!(num_seeds > 0);
-    assert_eq!(num_seeds % num_spawns, 0);
     println!("url {}, start_seed {}, num_seeds {}, fanout {}, num_batches {}, batch_size {}",
              args[1].as_str(), start_seed, num_seeds, num_spawns, num_batches, batch_size);
 
@@ -168,6 +167,7 @@ async fn main() -> Result<()> {
     println!("total number of accounts {}, time: {:?}", accounts.len(), start.elapsed());
 
     if num_spawns != 0 {
+        assert_eq!(num_seeds % num_spawns, 0);
         let mut handles: Vec<_> = Vec::new();
         let per_spawn = (num_seeds / num_spawns) as usize;
         for i in 0..num_spawns {
