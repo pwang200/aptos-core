@@ -8,6 +8,7 @@ use aptos_sdk::{
     rest_client::{Client, FaucetClient},
     types::LocalAccount,
 };
+use aptos_types::transaction::SignedTransaction;
 use futures::{executor::block_on, future::join_all};
 use once_cell::sync::Lazy;
 use rand::SeedableRng;
@@ -24,6 +25,7 @@ const SQN_BATCH: u64 = 20;
 // const FANOUT: u64 = 100;
 // const BATCH_SIZE: u64 = 100;
 // const NUM_BATCHES: u64 = 30;
+const APTO_BATCH: usize = 10;
 
 /**
  * create account array, segment by segment.
@@ -90,42 +92,47 @@ async fn fanout(mut senders: Vec<LocalAccount>, receivers: Vec<AccountAddress>, 
     for i in (0..num_batches) {
         let mut txns/*: Vec<aptos_types::transaction::SignedTransaction>*/ = Vec::new();
         for j in 0..batch_size {
-            let (n1, n2) = get_indexes(&mut rng, &senders, &receivers);
-            let bob = receivers[n2];
-            let alice = &mut senders[n1];
-            txns.push(coin_client.build(alice, bob, 50, CHAINID, None));
+            let mut tx_batch = Vec::new();
+            for k in 0..APTO_BATCH{
+                let (n1, n2) = get_indexes(&mut rng, &senders, &receivers);
+                let bob = receivers[n2];
+                let alice = &mut senders[n1];
+                tx_batch.push(coin_client.build(alice, bob, 50, CHAINID, None));
+            }
+            txns.push(tx_batch);//coin_client.build(alice, bob, 50, CHAINID, None)
         }
         let mut results: Vec<_> = Vec::new();
         //let round_start = Instant::now();
-        for tx in &mut txns {
-            results.push(rest_client.submit(tx));
+        for tx_batch in &mut txns {
+            results.push(rest_client.submit_batch(tx_batch));
         }
         let mut round_txns_results = join_all(results).await;
         txns_results.append(&mut round_txns_results);
         //println!("round {}, {:?}", i, round_start.elapsed());
     }
-    println!("before waiting txns {:?}", start.elapsed());
+    //println!("before waiting txns {:?}", start.elapsed());
 
     let mut submit_failures: u32 = 0;
-    let mut consensus_failures: u32 = 0;
-    let mut successes: u32 = 0;
+    // let mut consensus_failures: u32 = 0;
+    let mut submit_successes: u32 = 0;
     for r in txns_results {
         match r {
             Ok(re) => {
-                let p_tx = re.inner();
-                let tx_r = rest_client.wait_for_transaction(&p_tx).await;
-                match tx_r {
-                    Ok(tx_rr) => {
-                        if tx_rr.inner().success() {
-                            successes += 1;
-                        } else {
-                            println!("tx {:?}", tx_rr.inner().transaction_info());
-                        }
-                    },
-                    Err(e) => {
-                        consensus_failures += 1;
-                    },
-                }
+                // let p_tx = re.inner();
+                // let tx_r = rest_client.wait_for_transaction(&p_tx).await;
+                // match tx_r {
+                //     Ok(tx_rr) => {
+                //         if tx_rr.inner().success() {
+                //             successes += 1;
+                //         } else {
+                //             println!("tx {:?}", tx_rr.inner().transaction_info());
+                //         }
+                //     },
+                //     Err(e) => {
+                //         consensus_failures += 1;
+                //     },
+                // }
+                submit_successes += 1;
             },
             Err(e) => {
                 submit_failures += 1;
@@ -133,11 +140,11 @@ async fn fanout(mut senders: Vec<LocalAccount>, receivers: Vec<AccountAddress>, 
         }
     }
     println!(
-        "after waiting txns {:?}, {} {} {}",
+        "after waiting txns {:?}, good: {}, bad: {}",// {}",
         start.elapsed(),
-        successes,
-        submit_failures,
-        consensus_failures
+        submit_successes,
+        submit_failures//,
+        //consensus_failures
     );
 }
 
@@ -160,18 +167,20 @@ async fn main() -> Result<()> {
     let (mut accounts, receivers) = recreate_accounts(url.clone(), start_seed, num_seeds).await;
     println!("total number of accounts {}, time: {:?}", accounts.len(), start.elapsed());
 
-    let mut handles: Vec<_> = Vec::new();
-    let per_spawn = (num_seeds / num_spawns) as usize;
-    for i in 0..num_spawns {
-        let senders: Vec<LocalAccount> = accounts.drain(accounts.len() - per_spawn..).collect();
-        let handle = tokio::task::spawn(fanout(senders, receivers.clone(), num_batches, batch_size,url.clone()));
-        handles.push(handle);
+    if num_spawns != 0 {
+        let mut handles: Vec<_> = Vec::new();
+        let per_spawn = (num_seeds / num_spawns) as usize;
+        for i in 0..num_spawns {
+            let senders: Vec<LocalAccount> = accounts.drain(accounts.len() - per_spawn..).collect();
+            let handle = tokio::task::spawn(fanout(senders, receivers.clone(), num_batches, batch_size, url.clone()));
+            handles.push(handle);
+        }
+        assert!(accounts.is_empty());
+        for h in handles {
+            tokio::join!(h);
+        }
+        println!("total time: {:?}", start.elapsed());
     }
-    assert!(accounts.is_empty());
-    for h in handles {
-        tokio::join!(h);
-    }
-    println!("total time: {:?}", start.elapsed());
     Ok(())
 }
 // let (senders, remining_accounts) = remining_accounts.split_at_mut(per_spawn);
