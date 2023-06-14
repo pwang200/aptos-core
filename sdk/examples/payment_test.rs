@@ -26,6 +26,7 @@ const SQN_BATCH: u64 = 20;
 // const BATCH_SIZE: u64 = 100;
 // const NUM_BATCHES: u64 = 30;
 const APTO_BATCH: usize = 10;
+const ONE_SEC: Duration = Duration::from_secs(1);
 
 /**
  * create account array, segment by segment.
@@ -90,6 +91,7 @@ async fn fanout(mut senders: Vec<LocalAccount>, receivers: Vec<AccountAddress>, 
     let mut txns_results = Vec::new();
     let start = Instant::now();
     for i in (0..num_batches) {
+        let round_start = Instant::now();
         let mut txns/*: Vec<aptos_types::transaction::SignedTransaction>*/ = Vec::new();
         for j in 0..batch_size {
             let mut tx_batch = Vec::new();
@@ -102,13 +104,16 @@ async fn fanout(mut senders: Vec<LocalAccount>, receivers: Vec<AccountAddress>, 
             txns.push(tx_batch);//coin_client.build(alice, bob, 50, CHAINID, None)
         }
         let mut results: Vec<_> = Vec::new();
-        //let round_start = Instant::now();
+
         for tx_batch in &mut txns {
             results.push(rest_client.submit_batch(tx_batch));
         }
         let mut round_txns_results = join_all(results).await;
         txns_results.append(&mut round_txns_results);
-        //println!("round {}, {:?}", i, round_start.elapsed());
+        let dur = round_start.elapsed();
+        if dur < ONE_SEC{
+            tokio::time::sleep(ONE_SEC - dur).await;
+        }
     }
     //println!("before waiting txns {:?}", start.elapsed());
 
