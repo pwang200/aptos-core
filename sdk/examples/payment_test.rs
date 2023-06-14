@@ -87,7 +87,7 @@ async fn fanout(mut senders: Vec<LocalAccount>, receivers: Vec<AccountAddress>, 
     let rest_client = Client::new(url);
     let coin_client = CoinClient::new(&rest_client);
 
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(rand::rngs::OsRng.next_u64());
     let mut txns_results = Vec::new();
     let start = Instant::now();
     for i in (0..num_batches) {
