@@ -56,9 +56,10 @@ impl BatchCoordinator {
         let author = batch.author();
         let batch_id = batch.batch_id();
         trace!(
-            "QS: got batch message from {} batch_id {}",
+            "QS: got batch message from {} batch_id {} num txns {}",
             author,
             batch_id,
+            batch.num_txns()
         );
         counters::RECEIVED_BATCH_COUNT.inc();
         if batch.num_txns() > self.max_batch_txns {
