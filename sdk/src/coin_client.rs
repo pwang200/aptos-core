@@ -138,6 +138,40 @@ impl<'a> CoinClient<'a> {
         from_account.sign_with_transaction_builder(transaction_builder)
     }
 
+    pub fn build_simple_sc_call_tx(
+        &self,
+        tx_signer_account: &mut LocalAccount,
+        sc_addr: AccountAddress,
+        sc_name: Identifier,
+        func_name: Identifier,
+        ty_args: Vec<TypeTag>,
+        args: Vec<Vec<u8>>,
+        chain_id: u8,
+        options: Option<TransferOptions<'_>>,
+    ) -> aptos_types::transaction::SignedTransaction {
+        let options = options.unwrap_or_default();
+
+        let transaction_builder = TransactionBuilder::new(
+            TransactionPayload::EntryFunction(EntryFunction::new(
+                ModuleId::new(sc_addr, sc_name),
+                func_name,
+                ty_args,
+                args,
+            )),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + options.timeout_secs,
+            ChainId::new(chain_id),
+        )
+        .sender(tx_signer_account.address())
+        .sequence_number(tx_signer_account.sequence_number())
+        .max_gas_amount(options.max_gas_amount)
+        .gas_unit_price(options.gas_unit_price);
+        tx_signer_account.sign_with_transaction_builder(transaction_builder)
+    }
+
     pub async fn get_account_balance(&self, account: &AccountAddress) -> Result<u64> {
         let response = self
             .api_client

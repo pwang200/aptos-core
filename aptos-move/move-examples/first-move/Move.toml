@@ -1,0 +1,9 @@
+[package]
+name = 'UserInfo'
+version = '1.0.0'
+[dependencies.AptosFramework]
+git = 'https://github.com/aptos-labs/aptos-core.git'
+rev = 'main'
+subdir = 'aptos-move/framework/aptos-framework'
+[addresses]
+sender = "0xd20172e611f6371378204c0bbbd74ac6e31a833a1e3acb5888658d8a562d396b"
