@@ -165,11 +165,42 @@ impl<'a> CoinClient<'a> {
                 + options.timeout_secs,
             ChainId::new(chain_id),
         )
-        .sender(tx_signer_account.address())
-        .sequence_number(tx_signer_account.sequence_number())
-        .max_gas_amount(options.max_gas_amount)
-        .gas_unit_price(options.gas_unit_price);
+            .sender(tx_signer_account.address())
+            .sequence_number(tx_signer_account.sequence_number())
+            .max_gas_amount(options.max_gas_amount)
+            .gas_unit_price(options.gas_unit_price);
         tx_signer_account.sign_with_transaction_builder(transaction_builder)
+    }
+
+    pub async fn build_simple_sc_call_tx_send(
+        &self,
+        tx_signer_account: &mut LocalAccount,
+        sc_addr: AccountAddress,
+        sc_module_name: &str,
+        sc_func_name: &str,
+        ty_args: Vec<TypeTag>,
+        args: Vec<Vec<u8>>,
+        chain_id: u8,
+        options: Option<TransferOptions<'_>>,
+    ) {
+        let sc_module = Identifier::from_str(sc_module_name).unwrap();
+        let sc_func = Identifier::from_str(sc_func_name).unwrap();
+        let signed_tx = self.build_simple_sc_call_tx(
+            tx_signer_account,
+            sc_addr,
+            sc_module,
+            sc_func,
+            ty_args,
+            args,
+            chain_id,
+            options);
+        let pending_tx = self.api_client.submit(&signed_tx)
+            .await.context("Failed to submit the create_market transaction").unwrap().inner().clone();
+
+        self.api_client
+            .wait_for_transaction(&pending_tx)
+            .await.unwrap();
+            //.context("Failed when waiting for the create_market transaction");
     }
 
     pub async fn get_account_balance(&self, account: &AccountAddress) -> Result<u64> {
