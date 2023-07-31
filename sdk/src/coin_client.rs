@@ -229,7 +229,7 @@ pub struct TransferOptions<'a> {
 impl<'a> Default for TransferOptions<'a> {
     fn default() -> Self {
         Self {
-            max_gas_amount: 5_000,
+            max_gas_amount: 500_000,
             gas_unit_price: 100,
             timeout_secs: 30000,
             coin_type: "0x1::aptos_coin::AptosCoin",

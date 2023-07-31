@@ -81,7 +81,7 @@ const XRP_COIN_STR: &str  = "::xrp_coin::XRPCoin";
 const FUND_AMOUNT: u64 = 1000_000_000;
 const LIMIT_ORDER: u64 = 100;
 
-async fn register_fund_coin<'a>(coin_client: &'a CoinClient<'a>,
+async fn register_coin<'a>(coin_client: &'a CoinClient<'a>,
                                 sc_owner: & mut LocalAccount,
                                 user: & mut LocalAccount,
                                 coin_name: & str,
@@ -95,7 +95,12 @@ async fn register_fund_coin<'a>(coin_client: &'a CoinClient<'a>,
         vec![],
         chain_id,
         None).await;
-
+}
+async fn fund_coin<'a>(coin_client: &'a CoinClient<'a>,
+                                sc_owner: & mut LocalAccount,
+                                user: & mut LocalAccount,
+                                coin_name: & str,
+                                chain_id: u8) {
     coin_client.build_simple_sc_call_tx_send(
         sc_owner,
         sc_owner.address(),
@@ -106,7 +111,6 @@ async fn register_fund_coin<'a>(coin_client: &'a CoinClient<'a>,
         chain_id,
         None).await;
 }
-
 async fn deposit<'a>(coin_client: &'a CoinClient<'a>,
                      sc_owner: &mut LocalAccount,
                      user: &mut LocalAccount,
@@ -134,12 +138,12 @@ async fn create_trader<'a>(faucet_client: & FaucetClient,
         .await
         .context("Failed to fund account");
 
-    //register_fund_coin(coin_client, sc_owner, &mut alice, "dog_coin", chain_id).await;
-    register_fund_coin(coin_client, sc_owner, &mut alice, "moon_coin", chain_id).await;
-    register_fund_coin(coin_client, sc_owner, &mut alice, "xrp_coin", chain_id).await;
-    //deposit(coin_client, sc_owner, &mut alice, *DOG_COIN, chain_id).await;
-    deposit(coin_client, sc_owner, &mut alice, (*MOON_COIN).clone(), chain_id).await;
-    deposit(coin_client, sc_owner, &mut alice, (*XRP_COIN).clone(), chain_id).await;
+    // //register_fund_coin(coin_client, sc_owner, &mut alice, "dog_coin", chain_id).await;
+    // register_fund_coin(coin_client, sc_owner, &mut alice, "moon_coin", chain_id).await;
+    // register_fund_coin(coin_client, sc_owner, &mut alice, "xrp_coin", chain_id).await;
+    // //deposit(coin_client, sc_owner, &mut alice, *DOG_COIN, chain_id).await;
+    // deposit(coin_client, sc_owner, &mut alice, (*MOON_COIN).clone(), chain_id).await;
+    // deposit(coin_client, sc_owner, &mut alice, (*XRP_COIN).clone(), chain_id).await;
     alice
 }
 
@@ -150,7 +154,7 @@ async fn create_book<'a>(coin_client: &'a CoinClient<'a>,
                          chain_id: u8,
 ) {
     let sc_lot: u64 = 100;
-    let sc_tick: u64 = 10000;
+    let sc_tick: u64 = 1;
     coin_client.build_simple_sc_call_tx_send(
         sc_owner,
         *SC_ADDRESS,
@@ -222,14 +226,22 @@ async fn trade<'a>(coin_client: &'a CoinClient<'a>,
         None).await;
 }
 
-async fn account_balance(rest_client: & Client,
-                         trader: &mut LocalAccount,
-                         coin_str: &str) {//-> u64 {
-    let coin_string= ["0x1::coin::CoinStore<", SC_ADDRESS_STR, coin_str, ">"].concat();
-    let v = rest_client.get_account_resource(trader.address(), coin_string.as_str())
-        .await.unwrap().inner().clone().unwrap();
-    println!("coin_balance: {:?}", v);
-    //.data.as_object().unwrap().get("age").unwrap().as_u64().unwrap();
+async fn cancel_order<'a>(coin_client: &'a CoinClient<'a>,
+                          trader: &mut LocalAccount,
+                          base_coin: TypeTag,
+                          quote_coin: TypeTag,
+                          order_id: u128,
+                          chain_id: u8,
+) {
+    coin_client.build_simple_sc_call_tx_send(
+        trader,
+        *SC_ADDRESS,
+        "clob_market",
+        "cancel_order",
+        vec![base_coin, quote_coin],
+        vec![bcs::to_bytes(&order_id).unwrap()],
+        chain_id,
+        None).await;
 }
 
 async fn withdraw_all<'a>(coin_client: &'a CoinClient<'a>,
@@ -248,6 +260,17 @@ async fn withdraw_all<'a>(coin_client: &'a CoinClient<'a>,
         None).await;
 }
 
+async fn account_balance(rest_client: & Client,
+                         trader: &mut LocalAccount,
+                         coin_str: &str) {//-> u64 {
+    let coin_string= ["0x1::coin::CoinStore<", SC_ADDRESS_STR, coin_str, ">"].concat();
+    let v = rest_client.get_account_resource(trader.address(), coin_string.as_str())
+        .await.unwrap().inner().clone();
+    let vo = v.as_ref().unwrap().data.as_object().unwrap().get("coin").unwrap()
+        .as_object().unwrap().get("value").unwrap().as_str().unwrap();
+    println!("coin_balance: {:?}", vo);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut rest_client = Client::new(NODE_URL.clone());
@@ -256,125 +279,87 @@ async fn main() -> Result<()> {
     let chain_id = rest_client.get_index().await.context("Failed to get chain ID")?.inner().chain_id;
 
     let mut sc_owner = fill_sc_owner(& rest_client, & coin_client, chain_id).await;
-    create_book(&mut coin_client, &mut sc_owner, (*MOON_COIN).clone(), (*XRP_COIN).clone(), chain_id).await;
+    //TODO create_book if needed, e.g. new coin pair, new contracts
+    //create_book(&mut coin_client, &mut sc_owner, (*MOON_COIN).clone(), (*XRP_COIN).clone(), chain_id).await;
 
+    println!("0");
     let mut alice = create_trader(& faucet_client, & coin_client, &mut sc_owner, chain_id).await;
-    let mut bob = create_trader(& faucet_client, & coin_client, &mut sc_owner, chain_id).await;
+    register_coin(& coin_client, &mut sc_owner, &mut alice, "moon_coin", chain_id).await;
+    register_coin(& coin_client, &mut sc_owner, &mut alice, "xrp_coin", chain_id).await;
+    fund_coin(& coin_client, &mut sc_owner, &mut alice, "moon_coin", chain_id).await;
+    account_balance(& rest_client, &mut alice, MOON_COIN_STR).await;
+    account_balance(& rest_client, &mut alice, XRP_COIN_STR).await;
+    deposit(& coin_client, &mut sc_owner, &mut alice, (*MOON_COIN).clone(), chain_id).await;
+    account_balance(& rest_client, &mut alice, MOON_COIN_STR).await;
+    account_balance(& rest_client, &mut alice, XRP_COIN_STR).await;
 
+    println!("1");
+    let mut bob = create_trader(& faucet_client, & coin_client, &mut sc_owner, chain_id).await;
+    register_coin(& coin_client, &mut sc_owner, &mut bob, "moon_coin", chain_id).await;
+    register_coin(& coin_client, &mut sc_owner, &mut bob, "xrp_coin", chain_id).await;
+    fund_coin(& coin_client, &mut sc_owner, &mut bob, "xrp_coin", chain_id).await;
+    account_balance(& rest_client, &mut bob, MOON_COIN_STR).await;
+    account_balance(& rest_client, &mut bob, XRP_COIN_STR).await;
+    deposit(& coin_client, &mut sc_owner, &mut bob, (*XRP_COIN).clone(), chain_id).await;
+    account_balance(& rest_client, &mut bob, MOON_COIN_STR).await;
+    account_balance(& rest_client, &mut bob, XRP_COIN_STR).await;
+
+    println!("2");
     trade(&mut coin_client,
           &mut alice,
           (*MOON_COIN).clone(),
            (*XRP_COIN).clone(),
-          true,
+          false,
           10000,
-          10000,
+          200,
           chain_id,
     ).await;
+    account_balance(& rest_client, &mut alice, MOON_COIN_STR).await;
+    account_balance(& rest_client, &mut alice, XRP_COIN_STR).await;
+
+    println!("3");
     trade(&mut coin_client,
           &mut bob,
           (*MOON_COIN).clone(),
            (*XRP_COIN).clone(),
-          false,
+          true,
           10000,
-          10000,
+          100000,
           chain_id,
     ).await;
-    withdraw_all(& coin_client, &mut alice, (*XRP_COIN).clone(), chain_id).await;
+    account_balance(& rest_client, &mut alice, MOON_COIN_STR).await;
     account_balance(& rest_client, &mut alice, XRP_COIN_STR).await;
+
+    withdraw_all(& coin_client, &mut alice, (*MOON_COIN).clone(), chain_id).await;
+    account_balance(& rest_client, &mut alice, MOON_COIN_STR).await;
+    account_balance(& rest_client, &mut alice, XRP_COIN_STR).await;
+
+    withdraw_all(& coin_client, &mut alice, (*XRP_COIN).clone(), chain_id).await;
+    account_balance(& rest_client, &mut alice, MOON_COIN_STR).await;
+    account_balance(& rest_client, &mut alice, XRP_COIN_STR).await;
+
+    println!("4");
+    withdraw_all(& coin_client, &mut bob, (*MOON_COIN).clone(), chain_id).await;
+    withdraw_all(& coin_client, &mut bob, (*XRP_COIN).clone(), chain_id).await;
+    account_balance(& rest_client, &mut bob, MOON_COIN_STR).await;
+    account_balance(& rest_client, &mut bob, XRP_COIN_STR).await;
+
+
+    // cancel_order(&mut coin_client,
+    //              &mut alice,
+    //              (*MOON_COIN).clone(),
+    //              (*XRP_COIN).clone(),
+    //              0u128,
+    //              chain_id,
+    // ).await;
+    //
+    // withdraw_all(& coin_client, &mut alice, (*MOON_COIN).clone(), chain_id).await;
+    // account_balance(& rest_client, &mut alice, MOON_COIN_STR).await;
+    // account_balance(& rest_client, &mut alice, XRP_COIN_STR).await;
+    //
+    // withdraw_all(& coin_client, &mut alice, (*XRP_COIN).clone(), chain_id).await;
+    // account_balance(& rest_client, &mut alice, MOON_COIN_STR).await;
+    // account_balance(& rest_client, &mut alice, XRP_COIN_STR).await;
 
     Ok(())
 }
-
-
-// async fn vault_balance(rest_client: &mut Client,
-//                  trader: &mut LocalAccount,
-//                  coin_str: &str) {//-> u64 {
-//     let v = rest_client.get_account_resource(trader.address(), coin_str)
-//         .await.unwrap().inner().clone().unwrap();
-//     println!("coin_balance: {:?}", v);
-//     //.data.as_object().unwrap().get("age").unwrap().as_u64().unwrap();
-// }
-
-// let b = serde_json::to_string(&a).unwrap();
-// let c: TypeTag = serde_json::from_str(&b).unwrap();
-
-// println!("pk {:?}", ss.verifying_key());
-// let mut rng = rand::rngs::StdRng::seed_from_u64(101010u64);
-// let alice = LocalAccount::generate(&mut rng);
-// faucet_client
-//     .fund(alice.address(), 100_000_000)
-//     .await
-//     .context("Failed to fund Alice's account")?;
-// println!(
-//     "Alice: {:?} {:?}",
-//     alice.address().to_hex_literal(),
-//     coin_client
-//         .get_account_balance(&alice.address())
-//         .await
-//         .context("Failed to get Alice's account balance")?
-// );
-//
-// let a = TypeTag::Struct(Box::new(StructTag {
-//     address: AccountAddress::from_str("d13159cd96071803efc55861069ae00228ab38e42ab57a34621a67de113a261a").unwrap(),
-//     module: Identifier::new("dog_coin").unwrap(),
-//     name: Identifier::new("DogCoin").unwrap(),
-//     type_params: vec![],
-// }));
-// let b = serde_json::to_string(&a).unwrap();
-// let c: TypeTag = serde_json::from_str(&b).unwrap();
-// assert!(a.eq(&c), "Typetag serde error");
-//
-// println!("b {:?}", b);
-
-
-// let mut alice = LocalAccount::generate(&mut rand::rngs::OsRng);
-//     println!("Alice address: {}", alice.address().to_hex_literal());
-//     faucet_client
-//         .fund(alice.address(), 1000_000_000)
-//         .await
-//         .context("Failed to fund Alice's account")?;
-//     let mut bob = LocalAccount::generate(&mut rand::rngs::OsRng);
-//     println!("Bob address: {}", bob.address().to_hex_literal());
-//     faucet_client
-//         .fund(bob.address(), 1000_000_000)
-//         .await
-//         .context("Failed to fund Bob's account")?;
-//
-//     {
-//         let sc_func = Identifier::from_str("register").unwrap();
-//         let signed_tx = coin_client.build_simple_sc_call_tx(
-//             &mut alice,
-//             sc_address,
-//             sc_name,
-//             sc_func,
-//             vec![],
-//             vec![],
-//             chain_id,
-//             None);
-//         let pending_tx = rest_client.submit(&signed_tx)
-//             .await.context("Failed to submit the create_market transaction")?.into_inner();
-//         rest_client
-//             .wait_for_transaction(&pending_tx)
-//             .await
-//             .context("Failed when waiting for the create_market transaction")?;
-//     }
-
-// let sc_name = Identifier::from_str("clob_market").unwrap();
-// let sc_func = Identifier::from_str("create_market").unwrap();
-// let sc_lot: u64 = 100;
-// let sc_tick: u64 = 10000;
-// let signed_tx = coin_client.build_simple_sc_call_tx(
-//     &mut sc_owner,
-//     sc_address,
-//     sc_name,
-//     sc_func,
-//     vec![dog_coin, xrp_coin],
-//     vec![bcs::to_bytes(&sc_lot).unwrap(), bcs::to_bytes(&sc_tick).unwrap()],
-//     chain_id,
-//     None);
-// let pending_tx = rest_client.submit(&signed_tx)
-//     .await.context("Failed to submit the create_market transaction")?.into_inner();
-// rest_client
-//     .wait_for_transaction(&pending_tx)
-//     .await
-//     .context("Failed when waiting for the create_market transaction")?;
