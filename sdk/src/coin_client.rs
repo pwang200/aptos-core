@@ -21,6 +21,7 @@ use std::{
     str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
+use aptos_types::transaction::SignedTransaction;
 
 #[derive(Clone, Debug)]
 pub struct CoinClient<'a> {
@@ -69,10 +70,10 @@ impl<'a> CoinClient<'a> {
                 + options.timeout_secs,
             ChainId::new(chain_id),
         )
-        .sender(from_account.address())
-        .sequence_number(from_account.sequence_number())
-        .max_gas_amount(options.max_gas_amount)
-        .gas_unit_price(options.gas_unit_price);
+            .sender(from_account.address())
+            .sequence_number(from_account.sequence_number())
+            .max_gas_amount(options.max_gas_amount)
+            .gas_unit_price(options.gas_unit_price);
         let signed_txn = from_account.sign_with_transaction_builder(transaction_builder);
         Ok(self
             .api_client
@@ -131,46 +132,13 @@ impl<'a> CoinClient<'a> {
                 + options.timeout_secs,
             ChainId::new(chain_id),
         )
-        .sender(from_account.address())
-        .sequence_number(from_account.sequence_number())
-        .max_gas_amount(options.max_gas_amount)
-        .gas_unit_price(options.gas_unit_price);
+            .sender(from_account.address())
+            .sequence_number(from_account.sequence_number())
+            .max_gas_amount(options.max_gas_amount)
+            .gas_unit_price(options.gas_unit_price);
         from_account.sign_with_transaction_builder(transaction_builder)
     }
 
-    pub fn build_simple_sc_call_tx(
-        &self,
-        tx_signer_account: &mut LocalAccount,
-        sc_addr: AccountAddress,
-        sc_name: Identifier,
-        func_name: Identifier,
-        ty_args: Vec<TypeTag>,
-        args: Vec<Vec<u8>>,
-        chain_id: u8,
-        options: Option<TransferOptions<'_>>,
-    ) -> aptos_types::transaction::SignedTransaction {
-        let options = options.unwrap_or_default();
-
-        let transaction_builder = TransactionBuilder::new(
-            TransactionPayload::EntryFunction(EntryFunction::new(
-                ModuleId::new(sc_addr, sc_name),
-                func_name,
-                ty_args,
-                args,
-            )),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + options.timeout_secs,
-            ChainId::new(chain_id),
-        )
-            .sender(tx_signer_account.address())
-            .sequence_number(tx_signer_account.sequence_number())
-            .max_gas_amount(options.max_gas_amount)
-            .gas_unit_price(options.gas_unit_price);
-        tx_signer_account.sign_with_transaction_builder(transaction_builder)
-    }
 
     pub async fn build_simple_sc_call_tx_send(
         &self,
@@ -183,13 +151,13 @@ impl<'a> CoinClient<'a> {
         chain_id: u8,
         options: Option<TransferOptions<'_>>,
     ) {
-        let sc_module = Identifier::from_str(sc_module_name).unwrap();
-        let sc_func = Identifier::from_str(sc_func_name).unwrap();
-        let signed_tx = self.build_simple_sc_call_tx(
+        // let sc_module = Identifier::from_str(sc_module_name).unwrap();
+        // let sc_func = Identifier::from_str(sc_func_name).unwrap();
+        let signed_tx = build_simple_sc_call_tx(
             tx_signer_account,
             sc_addr,
-            sc_module,
-            sc_func,
+            sc_module_name,
+            sc_func_name,
             ty_args,
             args,
             chain_id,
@@ -200,7 +168,16 @@ impl<'a> CoinClient<'a> {
         self.api_client
             .wait_for_transaction(&pending_tx)
             .await.unwrap();
-            //.context("Failed when waiting for the create_market transaction");
+        //.context("Failed when waiting for the create_market transaction");
+    }
+
+    pub async fn send(&self, signed_tx: &SignedTransaction) {
+        let pending_tx = self.api_client.submit(signed_tx)
+            .await.context("Failed to submit the create_market transaction").unwrap().inner().clone();
+
+        self.api_client
+            .wait_for_transaction(&pending_tx)
+            .await.unwrap();
     }
 
     pub async fn get_account_balance(&self, account: &AccountAddress) -> Result<u64> {
@@ -212,6 +189,45 @@ impl<'a> CoinClient<'a> {
         Ok(response.inner().get())
     }
 }
+
+pub fn build_simple_sc_call_tx(
+    tx_signer_account: &mut LocalAccount,
+    sc_addr: AccountAddress,
+    sc_module_name: &str,
+    sc_func_name: &str,
+    // sc_name: Identifier,
+    // func_name: Identifier,
+    ty_args: Vec<TypeTag>,
+    args: Vec<Vec<u8>>,
+    chain_id: u8,
+    options: Option<TransferOptions<'_>>,
+) -> aptos_types::transaction::SignedTransaction {
+    let options = options.unwrap_or_default();
+
+    let sc_name = Identifier::from_str(sc_module_name).unwrap();
+    let sc_func = Identifier::from_str(sc_func_name).unwrap();
+
+    let transaction_builder = TransactionBuilder::new(
+        TransactionPayload::EntryFunction(EntryFunction::new(
+            ModuleId::new(sc_addr, sc_name),
+            sc_func,
+            ty_args,
+            args,
+        )),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + options.timeout_secs,
+        ChainId::new(chain_id),
+    )
+        .sender(tx_signer_account.address())
+        .sequence_number(tx_signer_account.sequence_number())
+        .max_gas_amount(options.max_gas_amount)
+        .gas_unit_price(options.gas_unit_price);
+    tx_signer_account.sign_with_transaction_builder(transaction_builder)
+}
+
 
 pub struct TransferOptions<'a> {
     pub max_gas_amount: u64,
@@ -236,3 +252,42 @@ impl<'a> Default for TransferOptions<'a> {
         }
     }
 }
+// pub fn build_simple_sc_call_tx(
+//     &self,
+//     tx_signer_account: &mut LocalAccount,
+//     sc_addr: AccountAddress,
+//     sc_module_name: &str,
+//     sc_func_name: &str,
+//     // sc_name: Identifier,
+//     // func_name: Identifier,
+//     ty_args: Vec<TypeTag>,
+//     args: Vec<Vec<u8>>,
+//     chain_id: u8,
+//     options: Option<TransferOptions<'_>>,
+// ) -> aptos_types::transaction::SignedTransaction {
+//     let options = options.unwrap_or_default();
+//
+//     let sc_name = Identifier::from_str(sc_module_name).unwrap();
+//     let sc_func = Identifier::from_str(sc_func_name).unwrap();
+//
+//     let transaction_builder = TransactionBuilder::new(
+//         TransactionPayload::EntryFunction(EntryFunction::new(
+//             ModuleId::new(sc_addr, sc_name),
+//             sc_func,
+//             ty_args,
+//             args,
+//         )),
+//         SystemTime::now()
+//             .duration_since(UNIX_EPOCH)
+//             .unwrap()
+//             .as_secs()
+//             + options.timeout_secs,
+//         ChainId::new(chain_id),
+//     )
+//         .sender(tx_signer_account.address())
+//         .sequence_number(tx_signer_account.sequence_number())
+//         .max_gas_amount(options.max_gas_amount)
+//         .gas_unit_price(options.gas_unit_price);
+//     tx_signer_account.sign_with_transaction_builder(transaction_builder)
+// }
+//

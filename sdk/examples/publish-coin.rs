@@ -82,7 +82,7 @@ const FUND_AMOUNT: u64 = 1000_000_000;
 const LIMIT_ORDER: u64 = 100;
 
 async fn register_coin<'a>(coin_client: &'a CoinClient<'a>,
-                                sc_owner: & mut LocalAccount,
+                           sc_owner: & mut LocalAccount,
                                 user: & mut LocalAccount,
                                 coin_name: & str,
                                 chain_id: u8) {
@@ -153,7 +153,7 @@ async fn create_book<'a>(coin_client: &'a CoinClient<'a>,
                          quote_coin: TypeTag,
                          chain_id: u8,
 ) {
-    let sc_lot: u64 = 100;
+    let sc_lot: u64 = 10;
     let sc_tick: u64 = 1;
     coin_client.build_simple_sc_call_tx_send(
         sc_owner,

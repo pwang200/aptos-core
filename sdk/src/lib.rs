@@ -39,3 +39,5 @@ pub mod rest_client {
 pub mod transaction_builder;
 
 pub mod types;
+
+pub mod dex_utils;

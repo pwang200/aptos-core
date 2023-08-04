@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     let signed_tx = coin_client.build_simple_sc_call_tx(
         &mut alice,
         sc_address,
-        sc_name,
+        "user_info"sc_name,
         sc_func,
         vec![],
         vec![bcs::to_bytes(&sc_set_value).unwrap()],

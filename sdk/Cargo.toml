@@ -29,10 +29,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tiny-bip39 = { workspace = true }
 static_assertions = "1.1.0"
+url = { workspace = true }
 
 [dev-dependencies]
 once_cell = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-url = { workspace = true }
 
