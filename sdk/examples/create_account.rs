@@ -38,7 +38,7 @@ const ONEAPT: u64 = 100_000_000;
 // const PERACCOUNT: u64 = ONEAPT * 1000;//1k aptos
 // static_assertions::const_assert!(EXPROUNDS >= 1 );
 
-async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: u64, node_url: Url, get_sqn: bool)
+async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: u64, node_url: Url, chain_id: u8, get_sqn: bool)
                 -> Vec<LocalAccount> {
     println!("fanout: seed {}, to_create {}, amount {}", seed, to_create, amount / ONEAPT);
     let rest_client = Client::new(node_url.clone());
@@ -60,7 +60,7 @@ async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: 
         println!("SEED={}", seed);
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let bob = LocalAccount::generate(&mut rng);
-        txns.push(coin_client.create_and_pay(&mut alice, bob.address(), amount, 4, None));
+        txns.push(coin_client.create_and_pay(&mut alice, bob.address(), amount, chain_id, None));
         accounts.push(bob);
         seed += 1;
     }
@@ -109,7 +109,7 @@ async fn fanout(mut alice: LocalAccount, mut seed: u64, to_create: u64, amount: 
     accounts
 }
 
-async fn fanout_multi(mut alice: LocalAccount, mut seed: u64, rounds: u32, per_round: u64, amount: u64, node_url: Url, get_sqn : bool)
+async fn fanout_multi(mut alice: LocalAccount, mut seed: u64, rounds: u32, per_round: u64, amount: u64, node_url: Url, chain_id: u8, get_sqn : bool)
                       -> Vec<LocalAccount>
 {
     let expected_end_seed = seed + (per_round + 1).pow(rounds) - 1;
@@ -123,7 +123,7 @@ async fn fanout_multi(mut alice: LocalAccount, mut seed: u64, rounds: u32, per_r
     //         panic!("account balance");
     //     },
     // }
-    println!("fanout_multi: expected_end_seed {}, rounds {}, per_round {}, amount {}", expected_end_seed, rounds, per_round, amount);
+    println!("fanout_multi: expected_end_seed {}, rounds {}, per_round {}, amount {}", expected_end_seed, rounds, per_round, amount / ONEAPT);
     let mut accounts: Vec<LocalAccount> = Vec::new();
     accounts.push(alice);
 
@@ -134,7 +134,7 @@ async fn fanout_multi(mut alice: LocalAccount, mut seed: u64, rounds: u32, per_r
         let mut accounts_round: Vec<LocalAccount> = Vec::new();
         let gs = get_sqn || r < rounds - 1;
         for a in accounts {
-            let mut ars = fanout(a, seed.clone(), per_round, amount.clone(), node_url.clone(), gs).await;
+            let mut ars = fanout(a, seed.clone(), per_round, amount.clone(), node_url.clone(), chain_id, gs).await;
             seed += per_round;
             accounts_round.append(&mut ars);
         }
@@ -163,6 +163,7 @@ async fn main() -> Result<()> {
     let rest_client = Client::new(node_url.clone());
     let faucet_client = FaucetClient::new(fauc_url.clone(), node_url.clone());
     let coin_client = CoinClient::new(&rest_client);
+    let chain_id = rest_client.get_index().await.context("Failed to get chain ID")?.inner().chain_id;
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
     // first account from faucet
@@ -191,7 +192,7 @@ async fn main() -> Result<()> {
     // PERROUND -1 more accounts, or PERROUND * PERROUND -1 more accounts depending on rounds
     let amount = per_account * per_round.pow(if exp_round >= 2 { exp_round - 2 } else { 0 });
     println!("First round amount {}", amount / ONEAPT);
-    let mut accounts = fanout_multi(alice, 1, if exp_round >= 2 { 2 } else { 1 }, per_round - 1, amount, node_url.clone(), true).await;
+    let mut accounts = fanout_multi(alice, 1, if exp_round >= 2 { 2 } else { 1 }, per_round - 1, amount, node_url.clone(), chain_id, true).await;
     println!("First round number of accounts {:?}", accounts.len());
     let duration_wait = incremental_start.elapsed();
     println!("duration: {:?}", duration_wait);
@@ -204,7 +205,7 @@ async fn main() -> Result<()> {
         for a in accounts {
             println!("spawn, seed {}", seed);
             let handle = tokio::task::spawn(
-                fanout_multi(a, seed.clone(), exp_round - 2, per_round - 1, per_account, node_url.clone(), false));
+                fanout_multi(a, seed.clone(), exp_round - 2, per_round - 1, per_account, node_url.clone(), chain_id, false));
             seed += per_round.pow(exp_round - 2) - 1;
             handles.push(handle);
         }
