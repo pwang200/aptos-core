@@ -102,12 +102,15 @@ pub fn deposit_tx(sc_addr: AccountAddress,
         None)
 }
 
-fn create_book_tx(sc_owner: &mut LocalAccount,
-                  base_coin: TypeTag,
-                  quote_coin: TypeTag,
-                  chain_id: u8,
-) -> SignedTransaction {
-    coin_client::build_simple_sc_call_tx(
+pub async fn create_book_tx_send(url: Url,
+                                 sc_owner: &mut LocalAccount,
+                                 base_coin: TypeTag,
+                                 quote_coin: TypeTag,
+                                 chain_id: u8,
+)  {
+    let rest_client = Client::new(url.clone());
+    let coin_client = CoinClient::new(&rest_client);
+    coin_client.build_simple_sc_call_tx_send(
         sc_owner,
         sc_owner.address(),
         "clob_market",
@@ -115,7 +118,7 @@ fn create_book_tx(sc_owner: &mut LocalAccount,
         vec![base_coin, quote_coin],
         vec![bcs::to_bytes(&LOT).unwrap(), bcs::to_bytes(&TICK).unwrap()],
         chain_id,
-        None)
+        None).await;
 }
 
 pub fn trade_tx(//coin_client: &'a CoinClient<'a>,
@@ -194,6 +197,7 @@ async fn account_balance(rest_client: &Client,
 pub async fn fill_sc_owner(url: Url,
                            sk_str: &str,
                            chain_id: u8,
+                           register: bool
 ) -> LocalAccount {
     let rest_client = Client::new(url.clone());
     let coin_client = CoinClient::new(&rest_client);
@@ -204,30 +208,32 @@ pub async fn fill_sc_owner(url: Url,
         await.context("Failed to get account").unwrap().inner().sequence_number;
     let mut sc_owner = LocalAccount::new(sc_addr.clone(), sc_ak, sc_sqn);
 
-    // coin_client.build_simple_sc_call_tx_send(
-    //     &mut sc_owner,
-    //     sc_addr.clone(),
-    //     "moon_coin",
-    //     "register",
-    //     vec![],
-    //     vec![],
-    //     chain_id,
-    //     None).await;
-    //
-    // coin_client.build_simple_sc_call_tx_send(
-    //     &mut sc_owner,
-    //     sc_addr.clone(),
-    //     "xrp_coin",
-    //     "register",
-    //     vec![],
-    //     vec![],
-    //     chain_id,
-    //     None).await;
+    if register {
+        coin_client.build_simple_sc_call_tx_send(
+            &mut sc_owner,
+            sc_addr.clone(),
+            "moon_coin",
+            "register",
+            vec![],
+            vec![],
+            chain_id,
+            None).await;
+
+        coin_client.build_simple_sc_call_tx_send(
+            &mut sc_owner,
+            sc_addr.clone(),
+            "xrp_coin",
+            "register",
+            vec![],
+            vec![],
+            chain_id,
+            None).await;
+    }
 
     sc_owner
 }
 
-pub async fn batch_submit(url: Url, txns: Vec<SignedTransaction>, submit_batch_size: usize)
+pub async fn batch_submit(url: Url, txns: Vec<SignedTransaction>, submit_batch_size: usize, wait_valid: bool)
                           -> (u32, u32, Duration) {
     let rest_client = Client::new(url);
     let start = Instant::now();
@@ -238,8 +244,11 @@ pub async fn batch_submit(url: Url, txns: Vec<SignedTransaction>, submit_batch_s
     let mut tx_idx = 0usize;
     let mut batch = Vec::new();
     let mut batches = Vec::new();
+    let mut tx_hashes = Vec::new();
     while tx_idx < num_txns {
         batch.push(txns[tx_idx].clone());
+//        let h = txns[tx_idx].committed_hash();
+        tx_hashes.push(txns[tx_idx].clone().committed_hash());
         tx_idx += 1;
         let finished = tx_idx == num_txns;
         if tx_idx % APTO_BATCH == 0 || finished
@@ -267,12 +276,18 @@ pub async fn batch_submit(url: Url, txns: Vec<SignedTransaction>, submit_batch_s
     let mut submit_successes: u32 = 0;
     for r in txns_results {
         match r {
-            Ok(_) => {
+            Ok(tx) => {
                 submit_successes += 1;
             }
             Err(_) => {
                 submit_failures += 1;
             }
+        }
+    }
+    let timeout_secs = 30000u64;
+    if wait_valid {
+        for h in tx_hashes {
+            rest_client.wait_for_transaction_by_hash(h, timeout_secs, None, None).await;
         }
     }
 

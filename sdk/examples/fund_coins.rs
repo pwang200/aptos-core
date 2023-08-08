@@ -29,18 +29,20 @@ use static_assertions;
 async fn fanout_register(sc_addr: AccountAddress,  mut users: &mut Vec<LocalAccount>,
                          submit_batch_size: usize, chain_id: u8, url: Url)
 {
+    let count = users.len();
     let mut txns = Vec::new();
     for alice in users {
         txns.push(dex_utils::register_coin_tx(sc_addr, alice, "moon_coin", chain_id));
         txns.push(dex_utils::register_coin_tx(sc_addr, alice, "xrp_coin", chain_id));
     }
-    let (good, bad, dur) = dex_utils::batch_submit(url, txns, submit_batch_size).await;
-    println!("after waiting txns {:?}, good: {}, bad: {}", dur, good, bad);
+    let (good, bad, dur) = dex_utils::batch_submit(url, txns, submit_batch_size, true).await;
+    println!("fanout_register, num {}, after waiting txns {:?}, good: {}, bad: {}", count, dur, good, bad);
 }
 
 async fn fanout_deposit(sc_addr: AccountAddress, mut users: &mut Vec<LocalAccount>, amount: u64,
                         submit_batch_size: usize, chain_id: u8, url: Url)
 {
+    let count = users.len();
     let mut txns = Vec::new();
     let moon = dex_utils::create_type_tag("moon_coin", "MoonCoin", sc_addr);
     let xrp = dex_utils::create_type_tag("xrp_coin", "XRPCoin", sc_addr);
@@ -48,14 +50,15 @@ async fn fanout_deposit(sc_addr: AccountAddress, mut users: &mut Vec<LocalAccoun
         txns.push(dex_utils::deposit_tx(sc_addr, alice, moon.clone(), amount, chain_id));
         txns.push(dex_utils::deposit_tx(sc_addr, alice, xrp.clone(), amount, chain_id));
     }
-    let (good, bad, dur) = dex_utils::batch_submit(url, txns, submit_batch_size).await;
-    println!("after waiting txns {:?}, good: {}, bad: {}", dur, good, bad);
+    let (good, bad, dur) = dex_utils::batch_submit(url, txns, submit_batch_size, true).await;
+    println!("fanout_deposit: amount {}, num {}, after waiting txns {:?}, good: {}, bad: {}", amount, count, dur, good, bad);
 }
 
 async fn fanout_transfer(sc_addr: AccountAddress, mut sender: &mut LocalAccount, mut receivers: &mut Vec<LocalAccount>,
                          amount: u64,
                          submit_batch_size: usize, chain_id: u8, url: Url)
 {
+    let count = receivers.len();
     let mut txns = Vec::new();
     let moon = dex_utils::create_type_tag("moon_coin", "MoonCoin", sc_addr.clone());
     let xrp = dex_utils::create_type_tag("xrp_coin", "XRPCoin", sc_addr);
@@ -63,8 +66,8 @@ async fn fanout_transfer(sc_addr: AccountAddress, mut sender: &mut LocalAccount,
         txns.push(dex_utils::transfer_coin_tx(&mut sender, &alice.address(), moon.clone(), amount, chain_id));
         txns.push(dex_utils::transfer_coin_tx(&mut sender, &alice.address(), xrp.clone(), amount, chain_id));
     }
-    let (good, bad, dur) = dex_utils::batch_submit(url, txns, submit_batch_size).await;
-    println!("after waiting txns {:?}, good: {}, bad: {}", dur, good, bad);
+    let (good, bad, dur) = dex_utils::batch_submit(url, txns, submit_batch_size, true).await;
+    println!("fanout_transfer: amount {}, num {}, after waiting txns {:?}, good: {}, bad: {}", amount, count, dur, good, bad);
 }
 
 async fn fanout_multi(sc_addr: AccountAddress, mut sender: LocalAccount, mut receivers: Vec<LocalAccount>,
@@ -86,8 +89,16 @@ async fn self_fund_coins(sc_owner: &mut LocalAccount, amount: u64, chain_id: u8,
     let mut txns = Vec::new();
     txns.push(dex_utils::fund_coin_tx(sc_owner, &sc_addr, "moon_coin", amount, chain_id));
     txns.push(dex_utils::fund_coin_tx(sc_owner, &sc_addr, "xrp_coin", amount, chain_id));
-    let (good, bad, dur) = dex_utils::batch_submit(url, txns, 2).await;
-    println!("after waiting txns {:?}, good: {}, bad: {}", dur, good, bad);
+    let (good, bad, dur) = dex_utils::batch_submit(url, txns, 2, true).await;
+    println!("self_fund_coins: amount {}, after waiting txns {:?}, good: {}, bad: {}", amount, dur, good, bad);
+}
+
+async fn create_book(sc_owner: &mut LocalAccount, chain_id: u8, url: Url)
+{
+    let sc_addr = sc_owner.address();
+    let moon = dex_utils::create_type_tag("moon_coin", "MoonCoin", sc_addr.clone());
+    let xrp = dex_utils::create_type_tag("xrp_coin", "XRPCoin", sc_addr);
+    dex_utils::create_book_tx_send(url, sc_owner, moon, xrp, chain_id).await;
 }
 
 #[tokio::main]
@@ -101,6 +112,8 @@ async fn main() -> Result<()> {
     let fanout: u64 = args[5].parse().unwrap();
     let submit_batch_size: usize = args[6].parse().unwrap();
     let per_account: u64 = args[7].parse::<u64>().unwrap();
+    let create_bk = args[8].parse::<bool>().unwrap();
+    let owner_rg = args[9].parse::<bool>().unwrap();
     assert!(num_seeds % fanout == 0 && num_seeds / fanout > 1);
     assert!(per_account > 0 && submit_batch_size > 0 );
     let per_spawn = num_seeds / fanout -1;
@@ -112,9 +125,13 @@ async fn main() -> Result<()> {
         url.clone(), start_seed, num_seeds ).await;
     println!("total number of accounts {}, time: {:?}", accounts.len(), start.elapsed());
     let mut deputies = accounts.drain(accounts.len() - fanout as usize..).collect();
-    let mut sc_owner = dex_utils::fill_sc_owner(url.clone(), &sk_str, chain_id).await;
+    let mut sc_owner = dex_utils::fill_sc_owner(url.clone(), &sk_str, chain_id, owner_rg).await;
     let sc_addr = sc_owner.address();
     self_fund_coins(&mut sc_owner, per_account * num_seeds, chain_id, url.clone()).await;
+    if create_bk {
+        create_book(&mut sc_owner, chain_id, url.clone()).await;
+    }
+    println!("funding deputies total {}, per_account {}", per_account * num_seeds / fanout, per_account);
     let (sc_owner, deputies) = fanout_multi(sc_addr.clone(), sc_owner, deputies,
                  per_account * num_seeds / fanout,per_account,
                  submit_batch_size , chain_id, url.clone()).await;
@@ -125,11 +142,11 @@ async fn main() -> Result<()> {
         //let mut deputy = deputies.pop().unwrap();
         let handle = tokio::task::spawn(
             fanout_multi(sc_addr.clone(), deputy, herd,
-                         per_account * num_seeds / fanout,per_account,
+                         per_account,per_account,
                          submit_batch_size , chain_id, url.clone()));
         handles.push(handle);
     }
-    assert!(deputies.is_empty());
+
     assert!(accounts.is_empty());
     for h in handles {
         tokio::join!(h);

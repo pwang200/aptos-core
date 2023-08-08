@@ -28,7 +28,7 @@ use static_assertions;
 
 async fn fanout_trade(sc_addr: AccountAddress, mut users: Vec<LocalAccount>,
                          rounds: u64, seed: u64,
-                         submit_batch_size: usize, chain_id: u8, url: Url)
+                         submit_batch_size: usize, chain_id: u8, url: Url, wait_valid: bool)
 {
     let price: u64 = 1;
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -40,7 +40,7 @@ async fn fanout_trade(sc_addr: AccountAddress, mut users: Vec<LocalAccount>,
             let is_bid = rng.next_u32() % 2 == 1;
             txns.push(dex_utils::trade_tx(sc_addr, alice, moon.clone(),xrp.clone(), is_bid, price, dex_utils::LOT, chain_id));
         }
-        let (good, bad, dur) = dex_utils::batch_submit(url.clone(), txns, submit_batch_size).await;
+        let (good, bad, dur) = dex_utils::batch_submit(url.clone(), txns, submit_batch_size, wait_valid).await;
         println!("round {}, time {:?}, good: {}, bad: {}", r, dur, good, bad);
     }
 }
@@ -56,6 +56,7 @@ async fn main() -> Result<()> {
     let fanout: u64 = args[5].parse().unwrap();
     let submit_batch_size: usize = args[6].parse().unwrap();
     let rounds: u64 = args[7].parse().unwrap();
+    let wait_valid: bool = args[8].parse().unwrap();
     assert!(num_seeds % fanout == 0 && num_seeds / fanout > 0);
     assert!(rounds > 0 && submit_batch_size > 0 );
     let per_spawn = (num_seeds / fanout) as usize;
@@ -66,7 +67,7 @@ async fn main() -> Result<()> {
     let (mut accounts, _) = dex_utils::recreate_accounts(
         url.clone(), start_seed, num_seeds).await;
     println!("total number of accounts {}, time: {:?}", accounts.len(), start.elapsed());
-    let mut sc_owner = dex_utils::fill_sc_owner(url.clone(), &sk_str, chain_id).await;
+    let mut sc_owner = dex_utils::fill_sc_owner(url.clone(), &sk_str, chain_id, false).await;
     let sc_addr = sc_owner.address();
 
     let mut handles = Vec::new();
@@ -74,7 +75,7 @@ async fn main() -> Result<()> {
         let mut herd = accounts.drain(accounts.len() - per_spawn..).collect();
         let handle = tokio::task::spawn(
             fanout_trade(sc_addr.clone(), herd, rounds, i as u64,
-                         submit_batch_size , chain_id, url.clone()));
+                         submit_batch_size , chain_id, url.clone(), wait_valid));
         handles.push(handle);
     }
     assert!(accounts.is_empty());
