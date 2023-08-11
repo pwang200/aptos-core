@@ -31,18 +31,31 @@ async fn fanout_trade(sc_addr: AccountAddress, mut users: Vec<LocalAccount>,
                          submit_batch_size: usize, chain_id: u8, url: Url, wait_valid: bool)
 {
     let price: u64 = 1;
+    let mut count = 0;
+    let mut good_submit = 0;
+    let mut bad_submit = 0;
+    let mut good_wait = 0;
+    let mut bad_wait = 0;
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let moon = dex_utils::create_type_tag("moon_coin", "MoonCoin", sc_addr);
     let xrp = dex_utils::create_type_tag("xrp_coin", "XRPCoin", sc_addr);
+    let start = Instant::now();
     for r in 0.. rounds{
         let mut txns = Vec::new();
         for alice in &mut users {
             let is_bid = rng.next_u32() % 2 == 1;
+            count+=1;
             txns.push(dex_utils::trade_tx(sc_addr, alice, moon.clone(),xrp.clone(), is_bid, price, dex_utils::LOT, chain_id));
         }
-        let (good, bad, dur) = dex_utils::batch_submit(url.clone(), txns, submit_batch_size, wait_valid).await;
-        println!("round {}, time {:?}, good: {}, bad: {}", r, dur, good, bad);
+        let (good, bad, w_good, w_bad,  dur) = dex_utils::batch_submit(url.clone(), txns, submit_batch_size, wait_valid).await;
+        good_submit += good;
+        bad_submit += bad;
+        good_wait += w_good;
+        bad_wait += w_bad;
+        //println!("round {}, time {:?}, good: {}, bad: {}", r, dur, good, bad);
     }
+    println!("seed {}, trades {}, good_submit {}, bad_submit {}, good_wait {}, bad_wait {}, time {:?}",
+             seed, count, good_submit, bad_submit, good_wait, bad_wait, start.elapsed());
 }
 
 #[tokio::main]

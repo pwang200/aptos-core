@@ -234,7 +234,7 @@ pub async fn fill_sc_owner(url: Url,
 }
 
 pub async fn batch_submit(url: Url, txns: Vec<SignedTransaction>, submit_batch_size: usize, wait_valid: bool)
-                          -> (u32, u32, Duration) {
+                          -> (u32, u32, u32, u32, Duration) {
     let rest_client = Client::new(url);
     let start = Instant::now();
 
@@ -284,14 +284,23 @@ pub async fn batch_submit(url: Url, txns: Vec<SignedTransaction>, submit_batch_s
             }
         }
     }
+    let mut wait_successes = 0;
+    let mut wait_failures = 0;
     let timeout_secs = 30000u64;
-    if wait_valid {
+    if submit_failures == 0 && wait_valid {
         for h in tx_hashes {
-            rest_client.wait_for_transaction_by_hash(h, timeout_secs, None, None).await;
+            if rest_client.wait_for_transaction_by_hash(h, timeout_secs,
+                                                        None, None)
+                .await.unwrap().inner().success(){
+                wait_successes += 1;
+            }
+            else{
+                wait_failures += 1;
+            }
         }
     }
 
-    (submit_successes, submit_failures, start.elapsed())
+    (submit_successes, submit_failures, wait_successes, wait_failures, start.elapsed())
 }
 
 
