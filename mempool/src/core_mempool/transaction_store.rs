@@ -676,12 +676,12 @@ impl TransactionStore {
 
     /// Garbage collect old transactions.
     pub(crate) fn gc_by_system_ttl(&mut self, gc_time: Duration) {
-        self.gc(gc_time, true);
+        //        self.gc(gc_time, true);
     }
 
     /// Garbage collect old transactions based on client-specified expiration time.
     pub(crate) fn gc_by_expiration_time(&mut self, block_time: Duration) {
-        self.gc(self.eager_expire_time(block_time), false);
+        // self.gc(self.eager_expire_time(block_time), false);
     }
 
     fn gc(&mut self, now: Duration, by_system_ttl: bool) {
